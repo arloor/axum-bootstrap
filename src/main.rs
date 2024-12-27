@@ -1,5 +1,7 @@
 #![allow(unused)]
 #![allow(dead_code)]
+use std::time::Duration;
+
 use clap::Parser;
 use http::init_http_client;
 use server::AppState;
@@ -35,6 +37,7 @@ pub async fn main() -> Result<(), DynError> {
     log::info!("connecting to mysql...");
     let pool: sqlx::Pool<sqlx::MySql> = sqlx_mysql::MySqlPoolOptions::new()
         .max_connections(20)
+        .acquire_timeout(Duration::from_secs(10))
         // .connect("mysql://root:xxxxxx@127.0.0.1:3306/test?ssl-mode=Required&timezone=%2B08:00")
         .connect_with(
             sqlx_mysql::MySqlConnectOptions::new()
