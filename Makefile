@@ -1,0 +1,2 @@
+sql:
+	cargo sqlx prepare
