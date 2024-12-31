@@ -34,23 +34,31 @@ pub async fn main() -> Result<(), DynError> {
     handle_signal()?;
     log::info!("init http client...");
     let client = init_http_client().await?;
-    log::info!("connecting to mysql...");
-    let pool: sqlx::Pool<sqlx::MySql> = sqlx_mysql::MySqlPoolOptions::new()
-        .max_connections(20)
-        .acquire_timeout(Duration::from_secs(10))
-        // .connect("mysql://root:xxxxxx@127.0.0.1:3306/test?ssl-mode=Required&timezone=%2B08:00")
-        .connect_with(
-            sqlx_mysql::MySqlConnectOptions::new()
-                .host("127.0.0.1")
-                .username("root")
-                .password("xxxxxx")
-                .database("test")
-                .ssl_mode(sqlx_mysql::MySqlSslMode::Required)
-                .timezone(Some(String::from("+08:00"))),
-        )
-        .await?;
+    #[cfg(feature = "mysql")]
+    {
+        log::info!("connecting to mysql...");
+        let pool: sqlx::Pool<sqlx::MySql> = sqlx_mysql::MySqlPoolOptions::new()
+            .max_connections(20)
+            .acquire_timeout(Duration::from_secs(10))
+            // .connect("mysql://root:xxxxxx@127.0.0.1:3306/test?ssl-mode=Required&timezone=%2B08:00")
+            .connect_with(
+                sqlx_mysql::MySqlConnectOptions::new()
+                    .host("127.0.0.1")
+                    .username("root")
+                    .password("xxxxxx")
+                    .database("test")
+                    .ssl_mode(sqlx_mysql::MySqlSslMode::Required)
+                    .timezone(Some(String::from("+08:00"))),
+            )
+            .await?;
+    }
 
-    server::axum_serve(AppState { pool, client }).await?;
+    server::axum_serve(AppState {
+        #[cfg(feature = "mysql")]
+        pool,
+        client,
+    })
+    .await?;
     Ok(())
 }
 

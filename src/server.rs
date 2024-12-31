@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, MySqlPool};
 
 pub(crate) struct AppState {
+    #[cfg(feature = "mysql")]
     pub(crate) pool: MySqlPool,
     pub(crate) client: reqwest::Client,
 }
@@ -61,28 +62,36 @@ async fn data_handler(
     if let Some(Json(data)) = req {
         info!("req data: {:?}", data);
     }
-
-    let pool = state.pool.borrow();
-    match sqlx::query!(r"select now() as now_local, now() as now_naive, now() as now_utc;")
-        .fetch_one(pool)
-        .await
+    #[cfg(not(feature = "mysql"))]
+    return (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        some_headers(),
+        Json(Response::error("mysql not enabled".to_string())),
+    );
+    #[cfg(feature = "mysql")]
     {
-        Ok(row) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            some_headers(),
-            Json(Response::success(vec![Data {
-                now_local: row.now_local,
-                now_naive: row.now_naive,
-                now_utc: row.now_utc,
-            }])),
-        ),
-        Err(e) => {
-            warn!("query now failed: {:?}", e);
-            (
+        let pool = state.pool.borrow();
+        match sqlx::query!(r"select now() as now_local, now() as now_naive, now() as now_utc;")
+            .fetch_one(pool)
+            .await
+        {
+            Ok(row) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 some_headers(),
-                Json(Response::error(format!("query now failed: {:?}", e))),
-            )
+                Json(Response::success(vec![Data {
+                    now_local: row.now_local,
+                    now_naive: row.now_naive,
+                    now_utc: row.now_utc,
+                }])),
+            ),
+            Err(e) => {
+                warn!("query now failed: {:?}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    some_headers(),
+                    Json(Response::error(format!("query now failed: {:?}", e))),
+                )
+            }
         }
     }
 }
