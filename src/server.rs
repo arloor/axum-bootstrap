@@ -12,6 +12,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use axum_macros::debug_handler;
 use chrono::{Local, NaiveDateTime, NaiveTime};
 use log::{info, warn};
 use prometheus_client::encoding::text::encode;
@@ -47,9 +48,10 @@ async fn metrics_handler() -> (StatusCode, String) {
     (StatusCode::OK, buffer)
 }
 
+#[debug_handler]
 async fn data_handler(
     State(state): State<Arc<AppState>>,
-    req: Option<Json<DataRequest>>,
+    req: Json<DataRequest>,
 ) -> (StatusCode, HeaderMap, Json<Response<Vec<Data>>>) {
     METRIC
         .req_count
@@ -59,9 +61,6 @@ async fn data_handler(
         .inc();
 
     info!("req: {:?}", req);
-    if let Some(Json(data)) = req {
-        info!("req data: {:?}", data);
-    }
     #[cfg(not(feature = "mysql"))]
     return (
         StatusCode::INTERNAL_SERVER_ERROR,
