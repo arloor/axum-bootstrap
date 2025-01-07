@@ -7,7 +7,6 @@ edition = "2021"
 mysql = []
 
 [dependencies]
-clap = { version = "4.5", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", default-features = false, features = [
     "charset",
@@ -16,19 +15,20 @@ reqwest = { version = "0.12", default-features = false, features = [
     "macos-system-configuration",
     "stream",
 ] }
+# http服务器
 axum = "0.8"
 axum-macros = "0.5"
 tower-http = { version = "0.6", features = ["cors", "timeout", "trace"] }
-chrono = "0.4"
-futures-util = "0.3"
-
+# 日志和监控
 log = "0.4"
 flexi_logger = "0.29"
 env_logger = "0.11"
-
+prometheus-client = "0.23"
+#序列化
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
+# 数据库
 sqlx = { version = "0.8", features = [
     "mysql",
     "runtime-tokio-rustls",
@@ -36,8 +36,7 @@ sqlx = { version = "0.8", features = [
     "chrono",
 ] }
 sqlx-mysql = "0.8"
-
-prometheus-client = "0.22"
+# tls需要
 tokio-rustls = { version = "0.26", features = [
     "logging",
     "tls12",
@@ -48,3 +47,7 @@ rustls-pemfile = "2.2.0"
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto"] }
 tower-service = "0.3"
+# 其他实用库
+chrono = "0.4"
+futures-util = "0.3"
+clap = { version = "4.5", features = ["derive"] }
