@@ -51,9 +51,7 @@ pub async fn axum_serve(app_state: AppState) -> Result<(), DynError> {
     log::info!("listening on port {}, use_tls: {}", PARAM.port, PARAM.tls);
     match PARAM.tls {
         true => serve_tls(&app).await?,
-        false => {
-            axum::serve(create_dual_stack_listener(PARAM.port as u16).await?, app).await?;
-        }
+        false => axum::serve(create_dual_stack_listener(PARAM.port as u16).await?, app).await?,
     }
     Ok(())
 }
