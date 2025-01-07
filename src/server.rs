@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, MySqlPool};
 use tokio::{sync::broadcast, time};
 use tokio_rustls::rustls::ServerConfig;
-use tower_http::{timeout::TimeoutLayer, trace::TraceLayer};
+use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tower_service::Service;
 
 pub(crate) struct AppState {
@@ -46,6 +46,7 @@ pub async fn axum_serve(app_state: AppState) -> Result<(), DynError> {
             // Graceful shutdown will wait for outstanding requests to complete. Add a timeout so
             // requests don't hang forever.
             TimeoutLayer::new(Duration::from_secs(10)),
+            CompressionLayer::new(),
         ))
         .with_state(Arc::new(app_state));
     log::info!("listening on port {}, use_tls: {}", PARAM.port, PARAM.tls);
