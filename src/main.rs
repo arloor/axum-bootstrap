@@ -24,6 +24,12 @@ pub struct Param {
     port: i16,
     #[arg(long, value_name = "reqwest client的代理", default_value = "")]
     http_proxy: String,
+    #[arg(long, value_name = "CERT", default_value = "cert.pem")]
+    cert: String,
+    #[arg(long, value_name = "KEY", default_value = "privkey.pem")]
+    key: String,
+    #[arg(short, long, help = "if enable, server will listen on https")]
+    tls: bool,
 }
 
 // 可以在这里进行一些预处理

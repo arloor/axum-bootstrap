@@ -174,17 +174,23 @@ dependencies = [
  "env_logger",
  "flexi_logger",
  "futures-util",
+ "hyper",
+ "hyper-util",
  "log",
  "prometheus-client",
  "reqwest",
+ "rustls-pemfile",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "serde_yaml",
+ "socket2",
  "sqlx",
  "sqlx-mysql",
  "tokio",
  "tokio-rustls",
  "tower-http",
+ "tower-service",
 ]
 
 [[package]]
