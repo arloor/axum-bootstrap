@@ -1,5 +1,5 @@
 // #![allow(clippy::unwrap_used)]
-use std::{borrow::Borrow, sync::Arc};
+use std::{borrow::Borrow, sync::Arc, time::Duration};
 
 use crate::{
     json::StupidValue,
@@ -19,6 +19,7 @@ use prometheus_client::encoding::text::encode;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, MySqlPool};
+use tower_http::{timeout::TimeoutLayer, trace::TraceLayer};
 
 pub(crate) struct AppState {
     #[cfg(feature = "mysql")]
@@ -32,7 +33,13 @@ pub async fn axum_serve(app_state: AppState) -> Result<(), DynError> {
         .route("/health", get(|| async { (StatusCode::OK, "OK") }))
         .route("/metrics", get(metrics_handler))
         .route("/data", get(data_handler).post(data_handler))
-        .layer(tower_http::cors::CorsLayer::permissive())
+        .layer((
+            TraceLayer::new_for_http(),
+            tower_http::cors::CorsLayer::permissive(),
+            // Graceful shutdown will wait for outstanding requests to complete. Add a timeout so
+            // requests don't hang forever.
+            TimeoutLayer::new(Duration::from_secs(10)),
+        ))
         .with_state(Arc::new(app_state));
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", PARAM.port)).await?;
     log::info!("listening on port {}", PARAM.port);

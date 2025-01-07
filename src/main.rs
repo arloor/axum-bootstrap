@@ -6,6 +6,7 @@ use clap::Parser;
 use http::init_http_client;
 use server::AppState;
 
+mod acceptor;
 mod env_logger;
 mod http;
 mod json;

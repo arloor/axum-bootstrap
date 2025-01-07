@@ -173,6 +173,7 @@ dependencies = [
  "clap",
  "env_logger",
  "flexi_logger",
+ "futures-util",
  "log",
  "prometheus-client",
  "reqwest",
@@ -182,6 +183,7 @@ dependencies = [
  "sqlx",
  "sqlx-mysql",
  "tokio",
+ "tokio-rustls",
  "tower-http",
 ]
 
@@ -1684,6 +1686,7 @@ version = "0.23.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5065c3f250cbd332cd894be57c40fa52387247659b14a2d6041d121547903b1b"
 dependencies = [
+ "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
@@ -2358,9 +2361,12 @@ dependencies = [
  "bitflags",
  "bytes",
  "http",
+ "http-body",
  "pin-project-lite",
+ "tokio",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
