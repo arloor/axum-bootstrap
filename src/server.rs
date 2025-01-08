@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, MySqlPool};
 use tokio::{sync::broadcast, time};
 use tokio_rustls::rustls::ServerConfig;
-use tower_http::{compression::CompressionLayer, timeout::TimeoutLayer, trace::TraceLayer};
+use tower_http::{compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tower_service::Service;
 
 pub(crate) struct AppState {
@@ -42,9 +42,7 @@ pub async fn axum_serve(app_state: AppState) -> Result<(), DynError> {
         .route("/data", get(data_handler).post(data_handler))
         .layer((
             TraceLayer::new_for_http(),
-            tower_http::cors::CorsLayer::permissive(),
-            // Graceful shutdown will wait for outstanding requests to complete. Add a timeout so
-            // requests don't hang forever.
+            CorsLayer::permissive(),
             TimeoutLayer::new(Duration::from_secs(10)),
             CompressionLayer::new(),
         ))
