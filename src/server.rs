@@ -52,7 +52,54 @@ pub async fn axum_serve(app_state: AppState) -> Result<(), DynError> {
     log::info!("listening on port {}, use_tls: {}", PARAM.port, PARAM.tls);
     match PARAM.tls {
         true => serve_tls(&app).await?,
-        false => axum::serve(create_dual_stack_listener(PARAM.port as u16).await?, app).await?,
+        false => serve(&app).await?,
+    }
+    Ok(())
+}
+
+async fn serve(app: &Router) -> Result<(), DynError> {
+    use hyper::body::Incoming;
+    use hyper_util::rt::{TokioExecutor, TokioIo};
+    let listener = create_dual_stack_listener(PARAM.port as u16).await?;
+    loop {
+        match listener.accept().await {
+            Ok((conn, client_socket_addr)) => {
+                let tower_service = app.clone();
+                tokio::spawn(async move {
+                    // Hyper has its own `AsyncRead` and `AsyncWrite` traits and doesn't use tokio.
+                    // `TokioIo` converts between them.
+                    let timeout_io =
+                        Box::pin(timeout_io::TimeoutIO::new(conn, Duration::from_secs(120)));
+                    let stream = TokioIo::new(timeout_io);
+
+                    // Hyper also has its own `Service` trait and doesn't use tower. We can use
+                    // `hyper::service::service_fn` to create a hyper `Service` that calls our app through
+                    // `tower::Service::call`.
+                    let hyper_service =
+                        hyper::service::service_fn(move |request: Request<Incoming>| {
+                            // We have to clone `tower_service` because hyper's `Service` uses `&self` whereas
+                            // tower's `Service` requires `&mut self`.
+                            //
+                            // We don't need to call `poll_ready` since `Router` is always ready.
+                            tower_service.clone().call(request)
+                        });
+
+                    let ret = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+                        .serve_connection_with_upgrades(stream, hyper_service)
+                        .await;
+
+                    if let Err(err) = ret {
+                        warn!(
+                            "error serving connection from {}: {}",
+                            client_socket_addr, err
+                        );
+                    }
+                });
+            }
+            Err(err) => {
+                warn!("Error accepting connection: {}", err);
+            }
+        }
     }
     Ok(())
 }
