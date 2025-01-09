@@ -5,7 +5,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct StupidValue<T>(pub T);
+pub(crate) struct StupidValue<T>(pub T);
 
 impl<T> Serialize for StupidValue<T>
 where

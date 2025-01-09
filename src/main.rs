@@ -3,17 +3,12 @@
 use std::time::Duration;
 
 use clap::Parser;
-use http::init_http_client;
-use server::AppState;
+use handler::AppState;
+use util::http::init_http_client;
 
-mod acceptor;
-mod env_logger;
-mod http;
-mod json;
-mod logx;
-mod metrics;
+mod handler;
 mod server;
-mod timeout_io;
+mod util;
 
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -38,7 +33,7 @@ pub(crate) static PARAM: std::sync::LazyLock<Param> = std::sync::LazyLock::new(P
 
 #[tokio::main]
 pub async fn main() -> Result<(), DynError> {
-    env_logger::init_log();
+    util::env_logger::init_log();
     handle_signal()?;
     log::info!("init http client...");
     let client = init_http_client().await?;
