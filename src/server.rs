@@ -79,7 +79,6 @@ async fn serve_tls(app: &Router) -> Result<(), DynError> {
         tls_config(&PARAM.key, &PARAM.cert)?,
         create_dual_stack_listener(PARAM.port as u16).await?,
     );
-    pin_mut!(acceptor);
     loop {
         tokio::select! {
             message = rx.recv() => {
