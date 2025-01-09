@@ -1,4 +1,4 @@
-// #![allow(clippy::unwrap_used)]
+use futures_util::pin_mut;
 use std::{borrow::Borrow, sync::Arc, time::Duration};
 
 use crate::{

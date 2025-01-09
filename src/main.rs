@@ -1,5 +1,5 @@
+#![deny(warnings)]
 #![allow(unused)]
-#![allow(dead_code)]
 use std::time::Duration;
 
 use clap::Parser;
