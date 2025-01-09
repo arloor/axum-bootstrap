@@ -17,7 +17,6 @@ use axum::{
 };
 use axum_macros::debug_handler;
 use chrono::{Local, NaiveDateTime, NaiveTime};
-use futures_util::pin_mut;
 use hyper::body::Incoming;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use log::{error, info, warn};
