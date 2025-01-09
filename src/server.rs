@@ -16,12 +16,19 @@ use axum::{
 use axum_macros::debug_handler;
 use chrono::{Local, NaiveDateTime, NaiveTime};
 use futures_util::pin_mut;
+use hyper::body::Incoming;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use log::{error, info, warn};
 use prometheus_client::encoding::text::encode;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, MySqlPool};
-use tokio::{pin, sync::broadcast, time};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    pin,
+    sync::broadcast,
+    time,
+};
 use tokio_rustls::rustls::ServerConfig;
 use tower_http::{
     compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer,
@@ -65,36 +72,7 @@ async fn serve(app: &Router) -> Result<(), DynError> {
         match listener.accept().await {
             Ok((conn, client_socket_addr)) => {
                 let tower_service = app.clone();
-                tokio::spawn(async move {
-                    // Hyper has its own `AsyncRead` and `AsyncWrite` traits and doesn't use tokio.
-                    // `TokioIo` converts between them.
-                    let timeout_io =
-                        Box::pin(timeout_io::TimeoutIO::new(conn, Duration::from_secs(120)));
-                    let stream = TokioIo::new(timeout_io);
-
-                    // Hyper also has its own `Service` trait and doesn't use tower. We can use
-                    // `hyper::service::service_fn` to create a hyper `Service` that calls our app through
-                    // `tower::Service::call`.
-                    let hyper_service =
-                        hyper::service::service_fn(move |request: Request<Incoming>| {
-                            // We have to clone `tower_service` because hyper's `Service` uses `&self` whereas
-                            // tower's `Service` requires `&mut self`.
-                            //
-                            // We don't need to call `poll_ready` since `Router` is always ready.
-                            tower_service.clone().call(request)
-                        });
-
-                    let ret = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
-                        .serve_connection_with_upgrades(stream, hyper_service)
-                        .await;
-
-                    if let Err(err) = ret {
-                        warn!(
-                            "error serving connection from {}: {}",
-                            client_socket_addr, err
-                        );
-                    }
-                });
+                tokio::spawn(handle_stream(conn, tower_service, client_socket_addr));
             }
             Err(err) => {
                 warn!("Error accepting connection: {}", err);
@@ -102,6 +80,41 @@ async fn serve(app: &Router) -> Result<(), DynError> {
         }
     }
     Ok(())
+}
+
+async fn handle_stream<T>(
+    stream: T,
+    tower_service: Router,
+    client_socket_addr: std::net::SocketAddr,
+) where
+    T: AsyncRead + AsyncWrite + Send + 'static,
+{
+    // Hyper has its own `AsyncRead` and `AsyncWrite` traits and doesn't use tokio.
+    // `TokioIo` converts between them.
+    let timeout_io = Box::pin(timeout_io::TimeoutIO::new(stream, Duration::from_secs(120)));
+    let stream = TokioIo::new(timeout_io);
+
+    // Hyper also has its own `Service` trait and doesn't use tower. We can use
+    // `hyper::service::service_fn` to create a hyper `Service` that calls our app through
+    // `tower::Service::call`.
+    let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| {
+        // We have to clone `tower_service` because hyper's `Service` uses `&self` whereas
+        // tower's `Service` requires `&mut self`.
+        //
+        // We don't need to call `poll_ready` since `Router` is always ready.
+        tower_service.clone().call(request)
+    });
+
+    let ret = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+        .serve_connection_with_upgrades(stream, hyper_service)
+        .await;
+
+    if let Err(err) = ret {
+        warn!(
+            "error serving connection from {}: {}",
+            client_socket_addr, err
+        );
+    }
 }
 
 async fn serve_tls(app: &Router) -> Result<(), DynError> {
@@ -139,33 +152,7 @@ async fn serve_tls(app: &Router) -> Result<(), DynError> {
                 match conn {
                     Ok((conn,client_socket_addr)) => {
                         let tower_service = app.clone();
-                        tokio::spawn(async move {
-                            // Hyper has its own `AsyncRead` and `AsyncWrite` traits and doesn't use tokio.
-                            // `TokioIo` converts between them.
-                            let timeout_io=Box::pin(timeout_io::TimeoutIO::new(conn, Duration::from_secs(120)));
-                            let stream = TokioIo::new(timeout_io);
-
-                            // Hyper also has its own `Service` trait and doesn't use tower. We can use
-                            // `hyper::service::service_fn` to create a hyper `Service` that calls our app through
-                            // `tower::Service::call`.
-                            let hyper_service =
-                                hyper::service::service_fn(move |request: Request<Incoming>| {
-                                    // We have to clone `tower_service` because hyper's `Service` uses `&self` whereas
-                                    // tower's `Service` requires `&mut self`.
-                                    //
-                                    // We don't need to call `poll_ready` since `Router` is always ready.
-                                    tower_service.clone().call(request)
-                                });
-
-                            let ret =
-                                hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
-                                    .serve_connection_with_upgrades(stream, hyper_service)
-                                    .await;
-
-                            if let Err(err) = ret {
-                                warn!("error serving connection from {}: {}", client_socket_addr, err);
-                            }
-                        });
+                        tokio::spawn(handle_stream(conn, tower_service, client_socket_addr));
                     }
                     Err(err) => {
                         warn!("Error accepting connection: {}", err);
