@@ -12,7 +12,7 @@ mod util;
 
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 
-/// 抓取guba的人气排行榜
+/// axum脚手架
 #[derive(Parser)]
 #[command(author, version=None, about, long_about = None)]
 pub struct Param {
