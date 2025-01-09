@@ -13,6 +13,7 @@ mod json;
 mod logx;
 mod metrics;
 mod server;
+mod timeout_io;
 
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 

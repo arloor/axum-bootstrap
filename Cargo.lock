@@ -196,6 +196,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "log",
+ "pin-project-lite",
  "prometheus-client",
  "reqwest",
  "rustls-pemfile",

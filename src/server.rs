@@ -5,7 +5,7 @@ use crate::{
     acceptor::{self, create_dual_stack_listener, rust_tls_acceptor, tls_config, TlsAcceptor},
     json::StupidValue,
     metrics::{HandleDataErrorLabel, METRIC},
-    DynError, PARAM,
+    timeout_io, DynError, PARAM,
 };
 use axum::{
     extract::{Request, State},
@@ -21,9 +21,11 @@ use prometheus_client::encoding::text::encode;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, MySqlPool};
-use tokio::{sync::broadcast, time};
+use tokio::{pin, sync::broadcast, time};
 use tokio_rustls::rustls::ServerConfig;
-use tower_http::{compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
+use tower_http::{
+    compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer,
+};
 use tower_service::Service;
 
 pub(crate) struct AppState {
@@ -94,7 +96,8 @@ async fn serve_tls(app: &Router) -> Result<(), DynError> {
                         tokio::spawn(async move {
                             // Hyper has its own `AsyncRead` and `AsyncWrite` traits and doesn't use tokio.
                             // `TokioIo` converts between them.
-                            let stream = TokioIo::new(conn);
+                            let timeout_io=Box::pin(timeout_io::TimeoutIO::new(conn, Duration::from_secs(120)));
+                            let stream = TokioIo::new(timeout_io);
 
                             // Hyper also has its own `Service` trait and doesn't use tower. We can use
                             // `hyper::service::service_fn` to create a hyper `Service` that calls our app through
