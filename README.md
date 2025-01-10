@@ -14,9 +14,6 @@ mkdir -p /var/lib/mysql /etc/mysql/conf.d
 cat > /etc/mysql/conf.d/ssl.cnf <<EOF
 [mysqld]
 default-time_zone = '+8:00'
-ssl_ca=/etc/mysql/ssl/ca.cer
-ssl_cert=/etc/mysql/ssl/arloor.dev.cer
-ssl_key=/etc/mysql/ssl/arloor.dev.key
 require_secure_transport=ON
 EOF
 docker run -d --rm  --name mysql \
