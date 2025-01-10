@@ -20,7 +20,6 @@ docker run -d --rm  --name mysql \
 --network host \
 -v /var/lib/mysql:/var/lib/mysql \
 -v /etc/mysql/conf.d:/etc/mysql/conf.d \
--v /root/.acme.sh/arloor.dev:/etc/mysql/ssl \
 -e MYSQL_DATABASE=test \
 -e MYSQL_ROOT_PASSWORD=xxxxxx \
 docker.io/library/mysql:9.1 
