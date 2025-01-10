@@ -19,7 +19,7 @@ use crate::{
 
 pub(crate) struct AppState {
     #[cfg(feature = "mysql")]
-    pub(crate) pool: MySqlPool,
+    pub(crate) pool: sqlx::MySqlPool,
     pub(crate) client: reqwest::Client,
 }
 
@@ -67,13 +67,14 @@ pub(crate) async fn data_handler(
     );
     #[cfg(feature = "mysql")]
     {
+        use std::borrow::Borrow;
         let pool = state.pool.borrow();
         match sqlx::query!(r"select now() as now_local, now() as now_naive, now() as now_utc;")
             .fetch_one(pool)
             .await
         {
             Ok(row) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::OK,
                 some_headers(),
                 Json(Response::success(vec![Data {
                     now_local: row.now_local,
@@ -82,7 +83,7 @@ pub(crate) async fn data_handler(
                 }])),
             ),
             Err(e) => {
-                warn!("query now failed: {:?}", e);
+                log::warn!("query now failed: {:?}", e);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     some_headers(),
