@@ -1,8 +1,22 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt};
 use std::fmt::Display;
 use std::str::FromStr;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+
+/// Serde deserialization decorator to map empty Strings to None,
+fn empty_string_as_none<'de, D, T>(de: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromStr,
+    T::Err: fmt::Display,
+{
+    let opt = Option::<String>::deserialize(de)?;
+    match opt.as_deref() {
+        None | Some("") => Ok(None),
+        Some(s) => FromStr::from_str(s).map_err(de::Error::custom).map(Some),
+    }
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct StupidValue<T>(pub T);
