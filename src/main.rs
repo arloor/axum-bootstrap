@@ -26,6 +26,14 @@ pub struct Param {
     key: String,
     #[arg(short, long, help = "if enable, server will listen on https")]
     tls: bool,
+    #[arg(long, value_name = "base clash conf url")]
+    clash_base_url: String,
+    #[arg(long, value_name = "clash sub url")]
+    clash_sub_url: String,
+    #[arg(long, value_name = "surge conf file")]
+    surge_base_conf: String,
+    #[arg(long, value_name = "surge sub url")]
+    surge_sub_url: String,
 }
 
 // 可以在这里进行一些预处理

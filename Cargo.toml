@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default=["mysql"]
+default = []
 mysql = []
 
 [dependencies]
@@ -19,7 +19,12 @@ reqwest = { version = "0.12", default-features = false, features = [
 # http服务器
 axum = "0.8"
 axum-macros = "0.5"
-tower-http = { version = "0.6", features = ["cors", "timeout", "trace","compression-full"] }
+tower-http = { version = "0.6", features = [
+    "cors",
+    "timeout",
+    "trace",
+    "compression-full",
+] }
 # 日志和监控
 log = "0.4"
 flexi_logger = "0.29"
