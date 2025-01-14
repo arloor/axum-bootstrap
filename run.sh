@@ -1,0 +1,2 @@
+chmod +x target/x86_64-unknown-linux-musl/release/axum-bootstrap
+target/x86_64-unknown-linux-musl/release/axum-bootstrap --port=4000 --clash-base-url=http://cdn.arloor.com/clash/clash.yaml --surge-base-conf=mac.conf "--clash-sub-url=https://appv2.nloli.xyz/tako_api/sub?token=Nn6IPl52Poz0n6BH&ss=ssr&addFlag=yes&nf=b&subType=meta" "--surge-sub-url=https://appv2.nloli.xyz/tako_api/sub?token=Nn6IPl52Poz0n6BH&ss=ssv2&addFlag=no&nf=b&subType=surge"
