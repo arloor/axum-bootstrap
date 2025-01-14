@@ -1,7 +1,8 @@
 name: docker_build_and_push
 on:
   push:
-    branches: ["disable"]
+    branches: 
+      - disable
 permissions:
   contents: write
 env:
