@@ -1,0 +1,19 @@
+name: docker_build_and_push
+on:
+  push:
+    branches: 
+      - disable
+permissions:
+  contents: write
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  docker_build_and_push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker build and push
+        run: |
+          podman login docker.io -u arloor -p ${{ secrets.REGISTRY_PASSWORD }}
+          podman build -f Dockerfile . -t docker.io/arloor/sub-proxy  --network host
+          podman push docker.io/arloor/sub-proxy:latest

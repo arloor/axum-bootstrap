@@ -1,0 +1,44 @@
+{
+  "db_name": "MySQL",
+  "query": "select now() as now_local, now() as now_naive, now() as now_utc;",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "now_local",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "now_naive",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 19
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "now_utc",
+        "type_info": {
+          "type": "Datetime",
+          "flags": "NOT_NULL | BINARY",
+          "max_size": 19
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "7f89afa3de6c820aeeb0948480785bb3760c3074d3b7ff605170f7302b4da0bc"
+}
