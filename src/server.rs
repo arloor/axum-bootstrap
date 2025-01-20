@@ -37,13 +37,18 @@ use tower_http::{
 use tower_service::Service;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60 * 24);
+const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub async fn axum_serve(app_state: AppState) -> Result<(), DynError> {
     let router = build_router(app_state);
     log::info!("listening on port {}, use_tls: {}", PARAM.port, PARAM.tls);
+    let server: hyper_util::server::conn::auto::Builder<TokioExecutor> =
+        hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+    let graceful: hyper_util::server::graceful::GracefulShutdown =
+        hyper_util::server::graceful::GracefulShutdown::new();
     match PARAM.tls {
-        true => serve_tls(&router).await?,
-        false => serve(&router).await?,
+        true => serve_tls(&router, server, graceful).await?,
+        false => serve_plantext(&router, server, graceful).await?,
     }
     Ok(())
 }
@@ -56,19 +61,19 @@ macro_rules! handle_connection {
                 let timeout_io = Box::pin(io::TimeoutIO::new(conn, Duration::from_secs(120)));
                 let stream = TokioIo::new(timeout_io);
 
-                let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| {
-                    tower_service.clone().call(request)
-                });
+                let hyper_service =
+                    hyper::service::service_fn(move |request: Request<Incoming>| {
+                        tower_service.clone().call(request)
+                    });
 
-                let conn = $server
-                    .serve_connection_with_upgrades(stream, hyper_service);
+                let conn = $server.serve_connection_with_upgrades(stream, hyper_service);
                 let conn = $graceful.watch(conn.into_owned());
 
                 tokio::spawn(async move {
                     if let Err(err) = conn.await {
                         info!("connection error: {}", err);
                     }
-                    info!("connection dropped: {}", client_socket_addr);
+                    log::debug!("connection dropped: {}", client_socket_addr);
                 });
             }
             Err(err) => {
@@ -78,20 +83,22 @@ macro_rules! handle_connection {
     };
 }
 
-async fn serve(app: &Router) -> Result<(), DynError> {
+async fn serve_plantext(
+    app: &Router,
+    server: hyper_util::server::conn::auto::Builder<TokioExecutor>,
+    graceful: hyper_util::server::graceful::GracefulShutdown,
+) -> Result<(), DynError> {
     use hyper::body::Incoming;
     use hyper_util::rt::{TokioExecutor, TokioIo};
     let listener = create_dual_stack_listener(PARAM.port as u16).await?;
-    let server = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
-    let graceful = hyper_util::server::graceful::GracefulShutdown::new();
     let signal = handle_signal();
     pin!(signal);
     loop {
         tokio::select! {
             _ = signal.as_mut() => {
+                info!("start graceful shutdown!");
                 drop(listener);
-                info!("Ctrl-C received, starting shutdown");
-                    break;
+                break;
             }
             conn = listener.accept() => {
                 handle_connection!(conn, app, server, graceful);
@@ -102,14 +109,18 @@ async fn serve(app: &Router) -> Result<(), DynError> {
         _ = graceful.shutdown() => {
             info!("Gracefully shutdown!");
         },
-        _ = tokio::time::sleep(Duration::from_secs(5)) => {
-            info!("Waited 10 seconds for graceful shutdown, aborting...");
+        _ = tokio::time::sleep(GRACEFUL_SHUTDOWN_TIMEOUT) => {
+            info!("Waited {GRACEFUL_SHUTDOWN_TIMEOUT:?} for graceful shutdown, aborting...");
         }
     }
     Ok(())
 }
 
-async fn serve_tls(app: &Router) -> Result<(), DynError> {
+async fn serve_tls(
+    app: &Router,
+    server: hyper_util::server::conn::auto::Builder<TokioExecutor>,
+    graceful: hyper_util::server::graceful::GracefulShutdown,
+) -> Result<(), DynError> {
     let (tx, _rx) = broadcast::channel::<Arc<ServerConfig>>(10);
     let tx_clone = tx.clone();
     tokio::spawn(async move {
@@ -131,16 +142,14 @@ async fn serve_tls(app: &Router) -> Result<(), DynError> {
         tls_config(&PARAM.key, &PARAM.cert)?,
         create_dual_stack_listener(PARAM.port as u16).await?,
     );
-    let server = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
-    let graceful = hyper_util::server::graceful::GracefulShutdown::new();
     let signal = handle_signal();
     pin!(signal);
     loop {
         tokio::select! {
             _ = signal.as_mut() => {
+                info!("start graceful shutdown!");
                 drop(acceptor);
-                info!("Ctrl-C received, starting shutdown");
-                    break;
+                break;
             }
             message = rx.recv() => {
                 #[allow(clippy::expect_used)]
@@ -158,46 +167,11 @@ async fn serve_tls(app: &Router) -> Result<(), DynError> {
         _ = graceful.shutdown() => {
             info!("Gracefully shutdown!");
         },
-        _ = tokio::time::sleep(Duration::from_secs(10)) => {
-            info!("Waited 10 seconds for graceful shutdown, aborting...");
+        _ = tokio::time::sleep(GRACEFUL_SHUTDOWN_TIMEOUT) => {
+            info!("Waited {GRACEFUL_SHUTDOWN_TIMEOUT:?} for graceful shutdown, aborting...");
         }
     }
     Ok(())
-}
-
-async fn handle_stream<T>(
-    stream: T,
-    tower_service: Router,
-    client_socket_addr: std::net::SocketAddr,
-) where
-    T: AsyncRead + AsyncWrite + Send + 'static,
-{
-    // Hyper has its own `AsyncRead` and `AsyncWrite` traits and doesn't use tokio.
-    // `TokioIo` converts between them.
-    let timeout_io = Box::pin(io::TimeoutIO::new(stream, Duration::from_secs(120)));
-    let stream = TokioIo::new(timeout_io);
-
-    // Hyper also has its own `Service` trait and doesn't use tower. We can use
-    // `hyper::service::service_fn` to create a hyper `Service` that calls our app through
-    // `tower::Service::call`.
-    let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| {
-        // We have to clone `tower_service` because hyper's `Service` uses `&self` whereas
-        // tower's `Service` requires `&mut self`.
-        //
-        // We don't need to call `poll_ready` since `Router` is always ready.
-        tower_service.clone().call(request)
-    });
-
-    let ret = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
-        .serve_connection_with_upgrades(stream, hyper_service)
-        .await;
-
-    if let Err(err) = ret {
-        warn!(
-            "error serving connection from {}: {}",
-            client_socket_addr, err
-        );
-    }
 }
 
 #[cfg(unix)]
@@ -207,7 +181,7 @@ async fn handle_signal() -> Result<(), DynError> {
     let mut terminate_signal = signal(SignalKind::terminate())?;
     tokio::select! {
         _ = terminate_signal.recv() => {
-            info!("receive terminate signal, exit");
+            info!("receive terminate signal, shutdowning");
         },
         _ = tokio::signal::ctrl_c() => {
             info!("ctrl_c => shutdowning");
