@@ -8,6 +8,7 @@ use log::info;
 use prometheus_client::encoding::text::encode;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use tokio::time::sleep;
 use tower_http::{
     compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer,
 };
@@ -26,7 +27,13 @@ pub(crate) struct AppState {
 pub(crate) fn build_router(app_state: AppState) -> Router {
     // build our application with a route
     Router::new()
-        .route("/", get(|| async { (StatusCode::OK, "OK") }))
+        .route(
+            "/",
+            get(|| async {
+                sleep(Duration::from_secs(15)).await;
+                (StatusCode::OK, "OK")
+            }),
+        )
         .route("/metrics", get(metrics_handler))
         .route("/data", get(data_handler).post(data_handler))
         .layer((
@@ -57,7 +64,6 @@ pub(crate) async fn data_handler(
             some: "test".to_string(),
         })
         .inc();
-
     info!("req: {:?}", req);
     #[cfg(not(feature = "mysql"))]
     return (

@@ -16,7 +16,7 @@
             // https://code.visualstudio.com/docs/editor/variables-reference
             "program": "${workspaceFolder}/target/debug/${workspaceFolderBasename}",
             "args": [
-                "--port=4000"
+                "--port=4000","-t"
             ],
             "cwd": "${workspaceFolder}",
             "console": "internalConsole",

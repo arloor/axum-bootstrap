@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, MySqlPool};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    pin,
+    pin, signal,
     sync::broadcast,
     time,
 };
@@ -88,8 +88,17 @@ async fn serve_tls(app: &Router) -> Result<(), DynError> {
         tls_config(&PARAM.key, &PARAM.cert)?,
         create_dual_stack_listener(PARAM.port as u16).await?,
     );
+    let server = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+    let graceful = hyper_util::server::graceful::GracefulShutdown::new();
+    let signal = handle_signal();
+    pin!(signal);
     loop {
         tokio::select! {
+            _ = signal.as_mut() => {
+                drop(acceptor);
+                info!("Ctrl-C received, starting shutdown");
+                    break;
+            }
             message = rx.recv() => {
                 #[allow(clippy::expect_used)]
                 let new_config = message.expect("Channel should not be closed");
@@ -101,13 +110,47 @@ async fn serve_tls(app: &Router) -> Result<(), DynError> {
                 match conn {
                     Ok((conn,client_socket_addr)) => {
                         let tower_service = app.clone();
-                        tokio::spawn(handle_stream(conn, tower_service, client_socket_addr));
+                        // Hyper has its own `AsyncRead` and `AsyncWrite` traits and doesn't use tokio.
+                        // `TokioIo` converts between them.
+                        let timeout_io = Box::pin(io::TimeoutIO::new(conn, Duration::from_secs(120)));
+                        let stream = TokioIo::new(timeout_io);
+
+                        // Hyper also has its own `Service` trait and doesn't use tower. We can use
+                        // `hyper::service::service_fn` to create a hyper `Service` that calls our app through
+                        // `tower::Service::call`.
+                        let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| {
+                            // We have to clone `tower_service` because hyper's `Service` uses `&self` whereas
+                            // tower's `Service` requires `&mut self`.
+                            //
+                            // We don't need to call `poll_ready` since `Router` is always ready.
+                            tower_service.clone().call(request)
+                        });
+
+                        let conn = server
+                            .serve_connection_with_upgrades(stream, hyper_service);
+                        let conn = graceful.watch(conn.into_owned());
+
+                        tokio::spawn(async move {
+                            if let Err(err) = conn.await {
+                                info!("connection error: {}", err);
+                            }
+                            info!("connection dropped: {}", client_socket_addr);
+                        });
                     }
                     Err(err) => {
                         warn!("Error accepting connection: {}", err);
                     }
                 }
             }
+
+        }
+    }
+    tokio::select! {
+        _ = graceful.shutdown() => {
+            info!("Gracefully shutdown!");
+        },
+        _ = tokio::time::sleep(Duration::from_secs(5)) => {
+            info!("Waited 10 seconds for graceful shutdown, aborting...");
         }
     }
     Ok(())
@@ -146,4 +189,27 @@ async fn handle_stream<T>(
             client_socket_addr, err
         );
     }
+}
+
+#[cfg(unix)]
+async fn handle_signal() -> Result<(), DynError> {
+    use log::info;
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut terminate_signal = signal(SignalKind::terminate())?;
+    tokio::select! {
+        _ = terminate_signal.recv() => {
+            info!("receive terminate signal, exit");
+        },
+        _ = tokio::signal::ctrl_c() => {
+            info!("ctrl_c => shutdowning");
+        },
+    };
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn handle_signal() -> Result<(), DynError> {
+    let _ = tokio::signal::ctrl_c().await;
+    info!("ctrl_c => shutdowning");
+    Ok(())
 }

@@ -34,7 +34,6 @@ pub(crate) static PARAM: std::sync::LazyLock<Param> = std::sync::LazyLock::new(P
 #[tokio::main]
 pub async fn main() -> Result<(), DynError> {
     util::env_logger::init_log();
-    handle_signal()?;
     log::info!("init http client...");
     let client = init_http_client().await?;
     #[cfg(feature = "mysql")]
@@ -66,35 +65,5 @@ pub async fn main() -> Result<(), DynError> {
         server::axum_serve(AppState { client }).await?;
     }
 
-    Ok(())
-}
-
-#[cfg(unix)]
-fn handle_signal() -> Result<(), DynError> {
-    use log::info;
-    use tokio::signal::unix::{signal, SignalKind};
-    let mut terminate_signal = signal(SignalKind::terminate())?;
-    tokio::spawn(async move {
-        tokio::select! {
-            _ = terminate_signal.recv() => {
-                info!("receive terminate signal, exit");
-                std::process::exit(0);
-            },
-            _ = tokio::signal::ctrl_c() => {
-                info!("ctrl_c => shutdowning");
-                std::process::exit(0); // 并不优雅关闭
-            },
-        };
-    });
-    Ok(())
-}
-
-#[cfg(windows)]
-fn handle_signal() -> Result<(), DynError> {
-    tokio::spawn(async move {
-        let _ = tokio::signal::ctrl_c().await;
-        info!("ctrl_c => shutdowning");
-        std::process::exit(0); // 并不优雅关闭
-    });
     Ok(())
 }
