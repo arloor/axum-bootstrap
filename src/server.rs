@@ -48,6 +48,36 @@ pub async fn axum_serve(app_state: AppState) -> Result<(), DynError> {
     Ok(())
 }
 
+macro_rules! handle_connection {
+    ($conn:expr, $app:expr, $server:expr, $graceful:expr) => {
+        match $conn {
+            Ok((conn, client_socket_addr)) => {
+                let tower_service = $app.clone();
+                let timeout_io = Box::pin(io::TimeoutIO::new(conn, Duration::from_secs(120)));
+                let stream = TokioIo::new(timeout_io);
+
+                let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| {
+                    tower_service.clone().call(request)
+                });
+
+                let conn = $server
+                    .serve_connection_with_upgrades(stream, hyper_service);
+                let conn = $graceful.watch(conn.into_owned());
+
+                tokio::spawn(async move {
+                    if let Err(err) = conn.await {
+                        info!("connection error: {}", err);
+                    }
+                    info!("connection dropped: {}", client_socket_addr);
+                });
+            }
+            Err(err) => {
+                warn!("Error accepting connection: {}", err);
+            }
+        }
+    };
+}
+
 async fn serve(app: &Router) -> Result<(), DynError> {
     use hyper::body::Incoming;
     use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -64,40 +94,7 @@ async fn serve(app: &Router) -> Result<(), DynError> {
                     break;
             }
             conn = listener.accept() => {
-                match conn {
-                    Ok((conn, client_socket_addr)) => {
-                        let tower_service = app.clone();
-                        // Hyper has its own `AsyncRead` and `AsyncWrite` traits and doesn't use tokio.
-                        // `TokioIo` converts between them.
-                        let timeout_io = Box::pin(io::TimeoutIO::new(conn, Duration::from_secs(120)));
-                        let stream = TokioIo::new(timeout_io);
-
-                        // Hyper also has its own `Service` trait and doesn't use tower. We can use
-                        // `hyper::service::service_fn` to create a hyper `Service` that calls our app through
-                        // `tower::Service::call`.
-                        let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| {
-                            // We have to clone `tower_service` because hyper's `Service` uses `&self` whereas
-                            // tower's `Service` requires `&mut self`.
-                            //
-                            // We don't need to call `poll_ready` since `Router` is always ready.
-                            tower_service.clone().call(request)
-                        });
-
-                        let conn = server
-                            .serve_connection_with_upgrades(stream, hyper_service);
-                        let conn = graceful.watch(conn.into_owned());
-
-                        tokio::spawn(async move {
-                            if let Err(err) = conn.await {
-                                info!("connection error: {}", err);
-                            }
-                            info!("connection dropped: {}", client_socket_addr);
-                        });
-                    }
-                    Err(err) => {
-                        warn!("Error accepting connection: {}", err);
-                    }
-                }
+                handle_connection!(conn, app, server, graceful);
             }
         }
     }
@@ -130,7 +127,7 @@ async fn serve_tls(app: &Router) -> Result<(), DynError> {
     let mut rx = tx_clone.subscribe();
     use hyper::body::Incoming;
     use hyper_util::rt::{TokioExecutor, TokioIo};
-    let mut acceptor = TlsAcceptor::new(
+    let mut acceptor: TlsAcceptor = TlsAcceptor::new(
         tls_config(&PARAM.key, &PARAM.cert)?,
         create_dual_stack_listener(PARAM.port as u16).await?,
     );
@@ -153,49 +150,15 @@ async fn serve_tls(app: &Router) -> Result<(), DynError> {
                 info!("replaced tls config");
             }
             conn = acceptor.accept() => {
-                match conn {
-                    Ok((conn,client_socket_addr)) => {
-                        let tower_service = app.clone();
-                        // Hyper has its own `AsyncRead` and `AsyncWrite` traits and doesn't use tokio.
-                        // `TokioIo` converts between them.
-                        let timeout_io = Box::pin(io::TimeoutIO::new(conn, Duration::from_secs(120)));
-                        let stream = TokioIo::new(timeout_io);
-
-                        // Hyper also has its own `Service` trait and doesn't use tower. We can use
-                        // `hyper::service::service_fn` to create a hyper `Service` that calls our app through
-                        // `tower::Service::call`.
-                        let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| {
-                            // We have to clone `tower_service` because hyper's `Service` uses `&self` whereas
-                            // tower's `Service` requires `&mut self`.
-                            //
-                            // We don't need to call `poll_ready` since `Router` is always ready.
-                            tower_service.clone().call(request)
-                        });
-
-                        let conn = server
-                            .serve_connection_with_upgrades(stream, hyper_service);
-                        let conn = graceful.watch(conn.into_owned());
-
-                        tokio::spawn(async move {
-                            if let Err(err) = conn.await {
-                                info!("connection error: {}", err);
-                            }
-                            info!("connection dropped: {}", client_socket_addr);
-                        });
-                    }
-                    Err(err) => {
-                        warn!("Error accepting connection: {}", err);
-                    }
-                }
+                handle_connection!(conn, app, server, graceful);
             }
-
         }
     }
     tokio::select! {
         _ = graceful.shutdown() => {
             info!("Gracefully shutdown!");
         },
-        _ = tokio::time::sleep(Duration::from_secs(5)) => {
+        _ = tokio::time::sleep(Duration::from_secs(10)) => {
             info!("Waited 10 seconds for graceful shutdown, aborting...");
         }
     }

@@ -30,7 +30,13 @@ pub(crate) fn build_router(app_state: AppState) -> Router {
         .route(
             "/",
             get(|| async {
-                sleep(Duration::from_secs(15)).await;
+                (StatusCode::OK, "OK")
+            }),
+        )
+        .route(
+            "/time",
+            get(|| async {
+                sleep(Duration::from_secs(20)).await;
                 (StatusCode::OK, "OK")
             }),
         )
@@ -39,7 +45,7 @@ pub(crate) fn build_router(app_state: AppState) -> Router {
         .layer((
             TraceLayer::new_for_http(),
             CorsLayer::permissive(),
-            TimeoutLayer::new(Duration::from_secs(10)),
+            TimeoutLayer::new(Duration::from_secs(30)),
             CompressionLayer::new(),
         ))
         .with_state(Arc::new(app_state))
