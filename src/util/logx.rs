@@ -7,6 +7,7 @@ use flexi_logger::{
 use log::{info, Record};
 const CURRENT_PKG: &str = env!("CARGO_PKG_NAME");
 
+#[allow(dead_code)]
 pub fn init_log(log_dir: &str, log_file: &str) -> Result<LoggerHandle, FlexiLoggerError> {
     // 转换成绝对路径
     let log_dir_path = path::absolute(log_dir)?;

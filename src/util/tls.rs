@@ -20,14 +20,13 @@ pub fn tls_config(key: &String, cert: &String) -> Result<Arc<ServerConfig>, DynE
     Ok(Arc::new(config))
 }
 
+#[allow(dead_code)]
 pub fn rust_tls_acceptor(
     key: &String,
     cert: &String,
 ) -> Result<tokio_rustls::TlsAcceptor, DynError> {
     Ok(tls_config(key, cert)?.into())
 }
-
-
 
 use core::task::{Context, Poll};
 use std::future::Future;

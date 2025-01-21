@@ -5,6 +5,7 @@ use std::str::FromStr;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 /// Serde deserialization decorator to map empty Strings to None,
+#[allow(dead_code)]
 fn empty_string_as_none<'de, D, T>(de: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
@@ -19,7 +20,7 @@ where
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct StupidValue<T>(pub T);
+pub struct StupidValue<T>(pub T);
 
 impl<T> Serialize for StupidValue<T>
 where
@@ -63,7 +64,7 @@ impl<T> From<T> for StupidValue<T> {
     }
 }
 
-pub(crate) mod my_date_format {
+pub mod my_date_format {
     use chrono::NaiveDateTime;
     use serde::{self, Deserialize, Deserializer, Serializer};
 
@@ -87,7 +88,7 @@ pub(crate) mod my_date_format {
     }
 }
 
-pub(crate) mod my_date_format_option {
+pub mod my_date_format_option {
     use super::my_date_format;
     use chrono::NaiveDateTime;
     use serde::{self, Deserialize, Deserializer, Serializer};

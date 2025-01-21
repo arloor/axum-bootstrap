@@ -1,6 +1,5 @@
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::TcpListener;
-use tokio_rustls::rustls::{ServerConfig, ServerConnection};
 
 pub(crate) async fn create_dual_stack_listener(port: u16) -> io::Result<TcpListener> {
     // 创建一个IPv6的socket

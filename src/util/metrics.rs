@@ -6,7 +6,7 @@ use prometheus_client::{
     registry::Registry,
 };
 
-pub(crate) static METRIC: LazyLock<Metrics> = LazyLock::new(|| {
+pub static METRIC: LazyLock<Metrics> = LazyLock::new(|| {
     let mut prom_registry = Registry::default();
     let req_count = Family::<HandleDataErrorLabel, Counter>::default();
     prom_registry.register("req_count", "help", req_count.clone());
@@ -16,12 +16,12 @@ pub(crate) static METRIC: LazyLock<Metrics> = LazyLock::new(|| {
     }
 });
 
-pub(crate) struct Metrics {
-    pub(crate) prom_registry: Registry,
-    pub(crate) req_count: Family<HandleDataErrorLabel, Counter>,
+pub struct Metrics {
+    pub prom_registry: Registry,
+    pub req_count: Family<HandleDataErrorLabel, Counter>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
-pub(crate) struct HandleDataErrorLabel {
-    pub(crate) some: String,
+pub struct HandleDataErrorLabel {
+    pub some: String,
 }

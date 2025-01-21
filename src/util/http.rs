@@ -1,15 +1,14 @@
-use std::sync::LazyLock;
-
 use reqwest::Client;
 
-use crate::{DynError, PARAM};
+use crate::DynError;
 
-pub(crate) async fn init_http_client() -> Result<Client, DynError> {
+pub async fn init_http_client(http_proxy: &str) -> Result<Client, DynError> {
     let client_builder = Client::builder().pool_max_idle_per_host(20);
-    let proxy = &PARAM.http_proxy;
-    if proxy.is_empty() {
+    if http_proxy.is_empty() {
         Ok(client_builder.build()?)
     } else {
-        Ok(client_builder.proxy(reqwest::Proxy::all(proxy)?).build()?)
+        Ok(client_builder
+            .proxy(reqwest::Proxy::all(http_proxy)?)
+            .build()?)
     }
 }

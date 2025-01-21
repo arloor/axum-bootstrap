@@ -1,6 +1,7 @@
-use std::{sync::Arc, time::Duration};
+#![allow(unused)]
+use std::sync::Arc;
 
-use axum::{extract::State, http::HeaderValue, routing::get, Json, Router};
+use axum::{extract::State, http::HeaderValue, Json};
 use axum_macros::debug_handler;
 use chrono::NaiveDateTime;
 use hyper::{HeaderMap, StatusCode};
@@ -8,12 +9,8 @@ use log::info;
 use prometheus_client::encoding::text::encode;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use tokio::time::sleep;
-use tower_http::{
-    compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer,
-};
 
-use crate::{
+use axum_bootstrap::{
     util::json::StupidValue,
     util::metrics::{HandleDataErrorLabel, METRIC},
 };
@@ -22,33 +19,6 @@ pub(crate) struct AppState {
     #[cfg(feature = "mysql")]
     pub(crate) pool: sqlx::MySqlPool,
     pub(crate) client: reqwest::Client,
-}
-
-pub(crate) fn build_router(app_state: AppState) -> Router {
-    // build our application with a route
-    Router::new()
-        .route(
-            "/",
-            get(|| async {
-                (StatusCode::OK, "OK")
-            }),
-        )
-        .route(
-            "/time",
-            get(|| async {
-                sleep(Duration::from_secs(20)).await;
-                (StatusCode::OK, "OK")
-            }),
-        )
-        .route("/metrics", get(metrics_handler))
-        .route("/data", get(data_handler).post(data_handler))
-        .layer((
-            TraceLayer::new_for_http(),
-            CorsLayer::permissive(),
-            TimeoutLayer::new(Duration::from_secs(30)),
-            CompressionLayer::new(),
-        ))
-        .with_state(Arc::new(app_state))
 }
 
 pub(crate) async fn metrics_handler() -> (StatusCode, String) {
@@ -110,13 +80,13 @@ pub(crate) async fn data_handler(
 pub(crate) struct DataRequest {
     #[serde(
         rename = "startTime",
-        with = "crate::util::json::my_date_format_option",
+        with = "axum_bootstrap::util::json::my_date_format_option",
         default
     )]
     pub(crate) start_time: Option<NaiveDateTime>,
     #[serde(
         rename = "endTime",
-        with = "crate::util::json::my_date_format_option",
+        with = "axum_bootstrap::util::json::my_date_format_option",
         default
     )]
     pub(crate) end_time: Option<NaiveDateTime>,
@@ -126,11 +96,11 @@ pub(crate) struct DataRequest {
 
 #[derive(serde::Serialize, Debug, FromRow)]
 pub(crate) struct Data {
-    #[serde(with = "crate::util::json::my_date_format")]
+    #[serde(with = "axum_bootstrap::util::json::my_date_format")]
     pub(crate) now_local: NaiveDateTime,
-    #[serde(with = "crate::util::json::my_date_format")]
+    #[serde(with = "axum_bootstrap::util::json::my_date_format")]
     pub(crate) now_naive: NaiveDateTime,
-    #[serde(with = "crate::util::json::my_date_format")]
+    #[serde(with = "axum_bootstrap::util::json::my_date_format")]
     pub(crate) now_utc: NaiveDateTime,
 }
 

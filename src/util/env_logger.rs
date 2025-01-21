@@ -1,4 +1,4 @@
-pub(crate) fn init_log() {
+pub fn init_log() {
     use chrono::Local;
     use env_logger;
     use std::io::Write;

@@ -1,14 +1,20 @@
 #![deny(warnings)]
-#![allow(unused)]
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
+use axum::{routing::get, Router};
+use axum_bootstrap::{
+    util::{self, http::init_http_client},
+    TlsParam,
+};
 use clap::Parser;
-use handler::AppState;
-use util::http::init_http_client;
+use handler::{data_handler, metrics_handler, AppState};
+use hyper::StatusCode;
+use tokio::time::sleep;
+use tower_http::{
+    compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer,
+};
 
 mod handler;
-mod server;
-mod util;
 
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -35,10 +41,11 @@ pub(crate) static PARAM: std::sync::LazyLock<Param> = std::sync::LazyLock::new(P
 pub async fn main() -> Result<(), DynError> {
     util::env_logger::init_log();
     log::info!("init http client...");
-    let client = init_http_client().await?;
-    #[cfg(feature = "mysql")]
-    {
+    let client = init_http_client(&PARAM.http_proxy).await?;
+
+    let router = if cfg!(feature = "mysql") {
         log::info!("connecting to mysql...");
+        #[allow(unused)]
         let pool: sqlx::Pool<sqlx::MySql> = sqlx_mysql::MySqlPoolOptions::new()
             .max_connections(20)
             .acquire_timeout(Duration::from_secs(10))
@@ -53,17 +60,48 @@ pub async fn main() -> Result<(), DynError> {
                     .timezone(Some(String::from("+08:00"))),
             )
             .await?;
-        server::axum_serve(AppState {
+        build_router(AppState {
             #[cfg(feature = "mysql")]
             pool,
             client,
         })
-        .await?;
-    }
-    #[cfg(not(feature = "mysql"))]
-    {
-        server::axum_serve(AppState { client }).await?;
-    }
-
+    } else {
+        build_router(AppState { client })
+    };
+    axum_bootstrap::axum_serve(
+        router,
+        PARAM.port as u16,
+        match PARAM.tls {
+            true => Some(TlsParam {
+                tls: true,
+                cert: PARAM.cert.to_string(),
+                key: PARAM.key.to_string(),
+            }),
+            false => None,
+        },
+    )
+    .await?;
     Ok(())
+}
+
+pub(crate) fn build_router(app_state: AppState) -> Router {
+    // build our application with a route
+    Router::new()
+        .route("/", get(|| async { (StatusCode::OK, "OK") }))
+        .route(
+            "/time",
+            get(|| async {
+                sleep(Duration::from_secs(20)).await;
+                (StatusCode::OK, "OK")
+            }),
+        )
+        .route("/metrics", get(metrics_handler))
+        .route("/data", get(data_handler).post(data_handler))
+        .layer((
+            TraceLayer::new_for_http(),
+            CorsLayer::permissive(),
+            TimeoutLayer::new(Duration::from_secs(30)),
+            CompressionLayer::new(),
+        ))
+        .with_state(Arc::new(app_state))
 }

@@ -1,54 +1,55 @@
-use futures_util::{pin_mut, select};
-use std::{borrow::Borrow, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
-use crate::{
-    handler::{build_router, data_handler, metrics_handler, AppState},
-    util::{
-        io::{self, create_dual_stack_listener},
-        tls::{tls_config, TlsAcceptor},
-    },
-    DynError, PARAM,
+pub mod util;
+type DynError = Box<dyn std::error::Error + Send + Sync>;
+use crate::util::{
+    io::{self, create_dual_stack_listener},
+    tls::{tls_config, TlsAcceptor},
 };
-use axum::{
-    extract::{Request, State},
-    http::{HeaderMap, HeaderValue, StatusCode},
-    routing::get,
-    Json, Router,
-};
-use axum_macros::debug_handler;
-use chrono::{Local, NaiveDateTime, NaiveTime};
-use hyper::body::Incoming;
-use hyper_util::rt::{TokioExecutor, TokioIo};
-use log::{error, info, warn};
-use prometheus_client::encoding::text::encode;
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, MySqlPool};
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    pin, signal,
-    sync::broadcast,
-    time,
-};
+use axum::Router;
+use hyper_util::rt::TokioExecutor;
+use log::{info, warn};
+use tokio::{pin, sync::broadcast, time};
 use tokio_rustls::rustls::ServerConfig;
-use tower_http::{
-    compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer,
-};
 use tower_service::Service;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60 * 24);
 const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
-pub async fn axum_serve(app_state: AppState) -> Result<(), DynError> {
-    let router = build_router(app_state);
-    log::info!("listening on port {}, use_tls: {}", PARAM.port, PARAM.tls);
+#[derive(Debug, Clone)]
+pub struct TlsParam {
+    pub tls: bool,
+    pub cert: String,
+    pub key: String,
+}
+
+pub async fn axum_serve(
+    router: Router,
+    port: u16,
+    tls_param: Option<TlsParam>,
+) -> Result<(), DynError> {
+    let use_tls = match tls_param.clone() {
+        Some(config) => config.tls,
+        None => false,
+    };
+    log::info!("listening on port {port}, use_tls: {use_tls}",);
     let server: hyper_util::server::conn::auto::Builder<TokioExecutor> =
         hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
     let graceful: hyper_util::server::graceful::GracefulShutdown =
         hyper_util::server::graceful::GracefulShutdown::new();
-    match PARAM.tls {
-        true => serve_tls(&router, server, graceful).await?,
-        false => serve_plantext(&router, server, graceful).await?,
+    match use_tls {
+        #[allow(clippy::expect_used)]
+        true => {
+            serve_tls(
+                &router,
+                server,
+                graceful,
+                port,
+                tls_param.expect("should be some"),
+            )
+            .await?
+        }
+        false => serve_plantext(&router, server, graceful, port).await?,
     }
     Ok(())
 }
@@ -59,8 +60,9 @@ macro_rules! handle_connection {
             Ok((conn, client_socket_addr)) => {
                 let tower_service = $app.clone();
                 let timeout_io = Box::pin(io::TimeoutIO::new(conn, Duration::from_secs(120)));
+                use hyper::Request;
+                use hyper_util::rt::TokioIo;
                 let stream = TokioIo::new(timeout_io);
-
                 let hyper_service =
                     hyper::service::service_fn(move |request: Request<Incoming>| {
                         tower_service.clone().call(request)
@@ -87,10 +89,10 @@ async fn serve_plantext(
     app: &Router,
     server: hyper_util::server::conn::auto::Builder<TokioExecutor>,
     graceful: hyper_util::server::graceful::GracefulShutdown,
+    port: u16,
 ) -> Result<(), DynError> {
     use hyper::body::Incoming;
-    use hyper_util::rt::{TokioExecutor, TokioIo};
-    let listener = create_dual_stack_listener(PARAM.port as u16).await?;
+    let listener = create_dual_stack_listener(port).await?;
     let signal = handle_signal();
     pin!(signal);
     loop {
@@ -120,14 +122,17 @@ async fn serve_tls(
     app: &Router,
     server: hyper_util::server::conn::auto::Builder<TokioExecutor>,
     graceful: hyper_util::server::graceful::GracefulShutdown,
+    port: u16,
+    tls_param: TlsParam,
 ) -> Result<(), DynError> {
     let (tx, _rx) = broadcast::channel::<Arc<ServerConfig>>(10);
     let tx_clone = tx.clone();
+    let tls_param_clone = tls_param.clone();
     tokio::spawn(async move {
         info!("update tls config every {:?}", REFRESH_INTERVAL);
         loop {
             time::sleep(REFRESH_INTERVAL).await;
-            if let Ok(new_acceptor) = tls_config(&PARAM.key, &PARAM.cert) {
+            if let Ok(new_acceptor) = tls_config(&tls_param_clone.key, &tls_param_clone.cert) {
                 info!("update tls config");
                 if let Err(e) = tx.send(new_acceptor) {
                     warn!("send tls config error:{}", e);
@@ -137,10 +142,9 @@ async fn serve_tls(
     });
     let mut rx = tx_clone.subscribe();
     use hyper::body::Incoming;
-    use hyper_util::rt::{TokioExecutor, TokioIo};
     let mut acceptor: TlsAcceptor = TlsAcceptor::new(
-        tls_config(&PARAM.key, &PARAM.cert)?,
-        create_dual_stack_listener(PARAM.port as u16).await?,
+        tls_config(&tls_param.key, &tls_param.cert)?,
+        create_dual_stack_listener(port).await?,
     );
     let signal = handle_signal();
     pin!(signal);
