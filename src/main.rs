@@ -43,9 +43,9 @@ pub async fn main() -> Result<(), DynError> {
     log::info!("init http client...");
     let client = init_http_client(&PARAM.http_proxy).await?;
 
-    let router = if cfg!(feature = "mysql") {
+    #[cfg(feature = "mysql")]
+    {
         log::info!("connecting to mysql...");
-        #[allow(unused)]
         let pool: sqlx::Pool<sqlx::MySql> = sqlx_mysql::MySqlPoolOptions::new()
             .max_connections(20)
             .acquire_timeout(Duration::from_secs(10))
@@ -60,27 +60,39 @@ pub async fn main() -> Result<(), DynError> {
                     .timezone(Some(String::from("+08:00"))),
             )
             .await?;
-        build_router(AppState {
-            #[cfg(feature = "mysql")]
-            pool,
-            client,
-        })
-    } else {
-        build_router(AppState { client })
-    };
-    axum_bootstrap::axum_serve(
-        router,
-        PARAM.port as u16,
-        match PARAM.tls {
-            true => Some(TlsParam {
-                tls: true,
-                cert: PARAM.cert.to_string(),
-                key: PARAM.key.to_string(),
-            }),
-            false => None,
-        },
-    )
-    .await?;
+
+        axum_bootstrap::axum_serve(
+            build_router(AppState { pool, client }),
+            PARAM.port as u16,
+            match PARAM.tls {
+                true => Some(TlsParam {
+                    tls: true,
+                    cert: PARAM.cert.to_string(),
+                    key: PARAM.key.to_string(),
+                }),
+                false => None,
+            },
+        )
+        .await?;
+    }
+
+    #[cfg(not(feature = "mysql"))]
+    {
+        axum_bootstrap::axum_serve(
+            build_router(AppState { client }),
+            PARAM.port as u16,
+            match PARAM.tls {
+                true => Some(TlsParam {
+                    tls: true,
+                    cert: PARAM.cert.to_string(),
+                    key: PARAM.key.to_string(),
+                }),
+                false => None,
+            },
+        )
+        .await?;
+    }
+
     Ok(())
 }
 
