@@ -1,7 +1,7 @@
 #![allow(unused)]
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use axum::{extract::State, http::HeaderValue, Json};
+use axum::{extract::State, http::HeaderValue, routing::get, Json, Router};
 use axum_macros::debug_handler;
 use chrono::NaiveDateTime;
 use hyper::{HeaderMap, StatusCode};
@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 use axum_bootstrap::util::json::StupidValue;
+use tokio::time::sleep;
+use tower_http::{compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 
 use crate::metrics::{HttpReqLabel, METRIC};
 
@@ -18,6 +20,28 @@ pub(crate) struct AppState {
     #[cfg(feature = "mysql")]
     pub(crate) pool: sqlx::MySqlPool,
     pub(crate) client: reqwest::Client,
+}
+
+pub(crate) fn build_router(app_state: AppState) -> Router {
+    // build our application with a route
+    Router::new()
+        .route("/", get(|| async { (StatusCode::OK, "OK") }))
+        .route(
+            "/time",
+            get(|| async {
+                sleep(Duration::from_secs(20)).await;
+                (StatusCode::OK, "OK")
+            }),
+        )
+        .route("/metrics", get(metrics_handler))
+        .route("/data", get(data_handler).post(data_handler))
+        .layer((
+            TraceLayer::new_for_http(),
+            CorsLayer::permissive(),
+            TimeoutLayer::new(Duration::from_secs(30)),
+            CompressionLayer::new(),
+        ))
+        .with_state(Arc::new(app_state))
 }
 
 pub(crate) async fn metrics_handler() -> (StatusCode, String) {

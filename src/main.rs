@@ -1,18 +1,11 @@
 #![deny(warnings)]
-use std::{sync::Arc, time::Duration};
 
-use axum::{routing::get, Router};
 use axum_bootstrap::{
     util::{self, http::init_http_client},
     TlsParam,
 };
 use clap::Parser;
-use handler::{data_handler, metrics_handler, AppState};
-use hyper::StatusCode;
-use tokio::time::sleep;
-use tower_http::{
-    compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer,
-};
+use handler::{build_router, AppState};
 
 mod handler;
 mod metrics;
@@ -24,7 +17,7 @@ type DynError = Box<dyn std::error::Error + Send + Sync>;
 #[command(author, version=None, about, long_about = None)]
 pub struct Param {
     #[arg(long, short, value_name = "port", default_value = "4000")]
-    port: i16,
+    port: u16,
     #[arg(long, value_name = "reqwest client的代理", default_value = "")]
     http_proxy: String,
     #[arg(long, value_name = "CERT", default_value = "cert.pem")]
@@ -81,7 +74,7 @@ pub async fn main() -> Result<(), DynError> {
     {
         axum_bootstrap::axum_serve(
             build_router(AppState { client }),
-            PARAM.port as u16,
+            PARAM.port,
             match PARAM.tls {
                 true => Some(TlsParam {
                     tls: true,
@@ -95,26 +88,4 @@ pub async fn main() -> Result<(), DynError> {
     }
 
     Ok(())
-}
-
-pub(crate) fn build_router(app_state: AppState) -> Router {
-    // build our application with a route
-    Router::new()
-        .route("/", get(|| async { (StatusCode::OK, "OK") }))
-        .route(
-            "/time",
-            get(|| async {
-                sleep(Duration::from_secs(20)).await;
-                (StatusCode::OK, "OK")
-            }),
-        )
-        .route("/metrics", get(metrics_handler))
-        .route("/data", get(data_handler).post(data_handler))
-        .layer((
-            TraceLayer::new_for_http(),
-            CorsLayer::permissive(),
-            TimeoutLayer::new(Duration::from_secs(30)),
-            CompressionLayer::new(),
-        ))
-        .with_state(Arc::new(app_state))
 }
