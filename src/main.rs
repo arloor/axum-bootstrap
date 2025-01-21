@@ -15,6 +15,7 @@ use tower_http::{
 };
 
 mod handler;
+mod metrics;
 
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 

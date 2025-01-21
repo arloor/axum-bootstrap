@@ -10,10 +10,9 @@ use prometheus_client::encoding::text::encode;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-use axum_bootstrap::{
-    util::json::StupidValue,
-    util::metrics::{HandleDataErrorLabel, METRIC},
-};
+use axum_bootstrap::util::json::StupidValue;
+
+use crate::metrics::{HttpReqLabel, METRIC};
 
 pub(crate) struct AppState {
     #[cfg(feature = "mysql")]
@@ -36,8 +35,8 @@ pub(crate) async fn data_handler(
 ) -> (StatusCode, HeaderMap, Json<Response<Vec<Data>>>) {
     METRIC
         .req_count
-        .get_or_create(&HandleDataErrorLabel {
-            some: "test".to_string(),
+        .get_or_create(&HttpReqLabel {
+            path: "test".to_string(),
         })
         .inc();
     info!("req: {:?}", req);
