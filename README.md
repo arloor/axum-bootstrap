@@ -3,6 +3,7 @@
 ### 参考
 
 1. [serve-with-hyper](https://github.com/tokio-rs/axum/blob/main/examples/serve-with-hyper/src/main.rs#L81)
+2. [hyper graceful shutdown](https://github.com/hyperium/hyper-util/blob/master/examples/server_graceful.rs)
 
 ### TLS自签名证书
 
