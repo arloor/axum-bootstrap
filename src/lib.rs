@@ -6,7 +6,11 @@ use crate::util::{
     io::{self, create_dual_stack_listener},
     tls::{tls_config, TlsAcceptor},
 };
-use axum::Router;
+use axum::{
+    response::{IntoResponse, Response},
+    Router,
+};
+use hyper::StatusCode;
 use hyper_util::rt::TokioExecutor;
 use log::{info, warn};
 use tokio::{pin, sync::broadcast, time};
@@ -199,4 +203,32 @@ async fn handle_signal() -> Result<(), DynError> {
     let _ = tokio::signal::ctrl_c().await;
     info!("ctrl_c => shutdowning");
     Ok(())
+}
+
+/// A simple error type that we can return when something goes wrong.
+/// 
+/// example:
+/// 
+/// ```Rust
+/// pub(crate) async fn error_func() -> Result<(StatusCode, String), AppError> {
+///      Err(AppError::new(io::Error::new(io::ErrorKind::Other, "MOCK error")))
+/// }
+/// ```
+pub struct AppError(std::io::Error);
+
+// Tell axum how to convert `AppError` into a response.
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Something went wrong: {}", self.0),
+        )
+            .into_response()
+    }
+}
+
+impl AppError {
+    pub fn new(err: std::io::Error) -> Self {
+        Self(err)
+    }
 }

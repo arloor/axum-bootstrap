@@ -1,5 +1,5 @@
 #![allow(unused)]
-use std::{sync::Arc, time::Duration};
+use std::{io, sync::Arc, time::Duration};
 
 use axum::{extract::State, http::HeaderValue, routing::get, Json, Router};
 use axum_macros::debug_handler;
@@ -10,9 +10,11 @@ use prometheus_client::encoding::text::encode;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-use axum_bootstrap::util::json::StupidValue;
+use axum_bootstrap::{util::json::StupidValue, AppError};
 use tokio::time::sleep;
-use tower_http::{compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
+use tower_http::{
+    compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer,
+};
 
 use crate::metrics::{HttpReqLabel, METRIC};
 
@@ -34,6 +36,7 @@ pub(crate) fn build_router(app_state: AppState) -> Router {
             }),
         )
         .route("/metrics", get(metrics_handler))
+        .route("/error", get(error_func))
         .route("/data", get(data_handler).post(data_handler))
         .layer((
             TraceLayer::new_for_http(),
@@ -44,12 +47,17 @@ pub(crate) fn build_router(app_state: AppState) -> Router {
         .with_state(Arc::new(app_state))
 }
 
-pub(crate) async fn metrics_handler() -> (StatusCode, String) {
+pub(crate) async fn metrics_handler() -> Result<(StatusCode, String), AppError> {
     let mut buffer = String::new();
     if let Err(e) = encode(&mut buffer, &METRIC.prom_registry) {
         log::error!("Failed to encode metrics: {:?}", e);
+        return Err(AppError::new(io::Error::new(io::ErrorKind::Other, e)));
     }
-    (StatusCode::OK, buffer)
+    Ok((StatusCode::OK, buffer))
+}
+
+pub(crate) async fn error_func() -> Result<(StatusCode, String), AppError> {
+    Err(AppError::new(io::Error::new(io::ErrorKind::Other, "MOCK error")))
 }
 
 #[debug_handler]
