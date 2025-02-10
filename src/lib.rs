@@ -205,16 +205,7 @@ async fn handle_signal() -> Result<(), DynError> {
     Ok(())
 }
 
-/// A simple error type that we can return when something goes wrong.
-/// 
-/// example:
-/// 
-/// ```Rust
-/// pub(crate) async fn error_func() -> Result<(StatusCode, String), AppError> {
-///      Err(AppError::new(io::Error::new(io::ErrorKind::Other, "MOCK error")))
-/// }
-/// ```
-pub struct AppError(std::io::Error);
+pub struct AppError(Box<dyn std::error::Error + Send + Sync>);
 
 // Tell axum how to convert `AppError` into a response.
 impl IntoResponse for AppError {
@@ -228,7 +219,7 @@ impl IntoResponse for AppError {
 }
 
 impl AppError {
-    pub fn new(err: std::io::Error) -> Self {
+    pub fn new(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
         Self(err)
     }
 }

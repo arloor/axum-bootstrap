@@ -51,13 +51,18 @@ pub(crate) async fn metrics_handler() -> Result<(StatusCode, String), AppError> 
     let mut buffer = String::new();
     if let Err(e) = encode(&mut buffer, &METRIC.prom_registry) {
         log::error!("Failed to encode metrics: {:?}", e);
-        return Err(AppError::new(io::Error::new(io::ErrorKind::Other, e)));
+        return Err(AppError::new(Box::new(io::Error::new(
+            io::ErrorKind::Other,
+            e,
+        ))));
     }
     Ok((StatusCode::OK, buffer))
 }
 
 pub(crate) async fn error_func() -> Result<(StatusCode, String), AppError> {
-    Err(AppError::new(io::Error::new(io::ErrorKind::Other, "MOCK error")))
+    Err(AppError::new(
+        io::Error::new(io::ErrorKind::Other, "MOCK error").into(),
+    ))
 }
 
 #[debug_handler]
