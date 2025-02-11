@@ -224,6 +224,12 @@ impl<T: std::error::Error + Send + Sync + 'static> From<Box<T>> for AppError {
     }
 }
 
+impl From<Box<dyn std::error::Error + Send + Sync>> for AppError {
+    fn from(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
+        Self(err)
+    }
+}
+
 impl AppError {
     pub fn new<T: std::error::Error + Send + Sync + 'static>(err: T) -> Self {
         Self(Box::new(err))
