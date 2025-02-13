@@ -2,8 +2,10 @@
 
 ### 参考
 
-1. [serve-with-hyper](https://github.com/tokio-rs/axum/blob/main/examples/serve-with-hyper/src/main.rs#L81)
-2. [hyper graceful shutdown](https://github.com/hyperium/hyper-util/blob/master/examples/server_graceful.rs)
+1. [axum serve-with-hyper](https://github.com/tokio-rs/axum/blob/main/examples/serve-with-hyper/src/main.rs#L81)
+2. [axum hyper graceful shutdown](https://github.com/hyperium/hyper-util/blob/master/examples/server_graceful.rs)
+3. [axum anyhow-error-response](https://github.com/tokio-rs/axum/blob/main/examples/anyhow-error-response/src/main.rs)
+4. [axum error-handling](https://github.com/tokio-rs/axum/blob/main/examples/error-handling/src/main.rs)
 
 ### TLS自签名证书
 
