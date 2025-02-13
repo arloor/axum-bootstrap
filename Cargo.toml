@@ -53,3 +53,4 @@ chrono = "0.4"
 futures-util = "0.3"
 clap = { version = "4.5", features = ["derive"] }
 pin-project-lite = "0.2"
+anyhow = "1"
