@@ -1,7 +1,12 @@
 #![allow(unused)]
 use std::{io, sync::Arc, time::Duration};
 
-use axum::{extract::State, http::HeaderValue, routing::get, Json, Router};
+use axum::{
+    extract::{MatchedPath, Request, State},
+    http::HeaderValue,
+    routing::get,
+    Json, Router,
+};
 use axum_macros::debug_handler;
 use chrono::NaiveDateTime;
 use hyper::{HeaderMap, StatusCode};
@@ -9,6 +14,7 @@ use log::info;
 use prometheus_client::encoding::text::encode;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
 use axum_bootstrap::{util::json::StupidValue, AppError};
 use tokio::time::sleep;
@@ -39,7 +45,23 @@ pub(crate) fn build_router(app_state: AppState) -> Router {
         .route("/error", get(error_func))
         .route("/data", get(data_handler).post(data_handler))
         .layer((
-            TraceLayer::new_for_http(),
+            TraceLayer::new_for_http() // Create our own span for the request and include the matched path. The matched
+                // path is useful for figuring out which handler the request was routed to.
+                .make_span_with(|req: &Request| {
+                    let method = req.method();
+                    let uri = req.uri();
+
+                    // axum automatically adds this extension.
+                    let matched_path = req
+                        .extensions()
+                        .get::<MatchedPath>()
+                        .map(|matched_path| matched_path.as_str());
+
+                    tracing::debug_span!("request", %method, %uri, matched_path)
+                })
+                // By default `TraceLayer` will log 5xx responses but we're doing our specific
+                // logging of errors so disable that
+                .on_failure(()),
             CorsLayer::permissive(),
             TimeoutLayer::new(Duration::from_secs(30)),
             CompressionLayer::new(),

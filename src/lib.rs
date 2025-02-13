@@ -212,9 +212,13 @@ pub struct AppError(anyhow::Error);
 // Tell axum how to convert `AppError` into a response.
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        let err=self.0;
+        // Because `TraceLayer` wraps each request in a span that contains the request
+        // method, uri, etc we don't need to include those details here
+        tracing::error!(%err, "error from time_library");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Something went wrong: {}", self.0),
+            format!("Something went wrong: {}", &err),
         )
             .into_response()
     }

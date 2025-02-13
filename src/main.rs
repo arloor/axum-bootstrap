@@ -1,11 +1,15 @@
 #![deny(warnings)]
 
 use axum_bootstrap::{
-    util::{self, http::init_http_client},
+    util::http::init_http_client,
     TlsParam,
 };
+
+
 use clap::Parser;
 use handler::{build_router, AppState};
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt;
 
 mod handler;
 mod metrics;
@@ -33,7 +37,16 @@ pub(crate) static PARAM: std::sync::LazyLock<Param> = std::sync::LazyLock::new(P
 
 #[tokio::main]
 pub async fn main() -> Result<(), DynError> {
-    util::env_logger::init_log();
+    // util::env_logger::init_log();
+
+    tracing_subscriber::registry()
+    .with(
+        tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            format!("{}=debug,tower_http=debug", env!("CARGO_CRATE_NAME")).into()
+        }),
+    )
+    .with(tracing_subscriber::fmt::layer())
+    .init();
     log::info!("init http client...");
     let client = init_http_client(&PARAM.http_proxy).await?;
 
