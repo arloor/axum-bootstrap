@@ -1,10 +1,6 @@
 #![deny(warnings)]
 
-use axum_bootstrap::{
-    util::http::init_http_client,
-    TlsParam,
-};
-
+use axum_bootstrap::{util::http::init_http_client, TlsParam};
 
 use clap::Parser;
 use handler::{build_router, AppState};
@@ -40,13 +36,21 @@ pub async fn main() -> Result<(), DynError> {
     // util::env_logger::init_log();
 
     tracing_subscriber::registry()
-    .with(
-        tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            format!("{}=debug,tower_http=debug", env!("CARGO_CRATE_NAME")).into()
-        }),
-    )
-    .with(tracing_subscriber::fmt::layer())
-    .init();
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                format!("{}=debug,tower_http=debug", env!("CARGO_CRATE_NAME")).into()
+            }),
+        )
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_thread_ids(true)
+                // .with_timer(tracing_subscriber::fmt::time::LocalTime::rfc_3339()),
+                .with_timer(
+                    tracing_subscriber::fmt::time::OffsetTime::local_rfc_3339()
+                        .expect("could not get local offset!"),
+                ),
+        )
+        .init();
     log::info!("init http client...");
     let client = init_http_client(&PARAM.http_proxy).await?;
 
