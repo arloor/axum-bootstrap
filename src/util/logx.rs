@@ -8,7 +8,11 @@ use log::{info, Record};
 const CURRENT_PKG: &str = env!("CARGO_PKG_NAME");
 
 #[allow(dead_code)]
-pub fn init_log(log_dir: &str, log_file: &str) -> Result<LoggerHandle, FlexiLoggerError> {
+pub fn init_log(
+    log_dir: &str,
+    log_file: &str,
+    env_cargo_crate_name: &str,
+) -> Result<LoggerHandle, FlexiLoggerError> {
     // 转换成绝对路径
     let log_dir_path = path::absolute(log_dir)?;
     if !log_dir_path.exists() {
@@ -19,9 +23,9 @@ pub fn init_log(log_dir: &str, log_file: &str) -> Result<LoggerHandle, FlexiLogg
         "error parse absolute path of log dir",
     ))?;
     let logger = if cfg!(debug_assertions) {
-        Logger::try_with_env_or_str(format!("info,{CURRENT_PKG}=debug"))?
+        Logger::try_with_env_or_str(format!("info,{env_cargo_crate_name}=debug"))?
     } else {
-        Logger::try_with_env_or_str(format!("error,{CURRENT_PKG}=info"))?
+        Logger::try_with_env_or_str(format!("error,{env_cargo_crate_name}=info"))?
     };
     let log = logger
         .log_to_file(
@@ -44,7 +48,10 @@ pub fn init_log(log_dir: &str, log_file: &str) -> Result<LoggerHandle, FlexiLogg
     let symlink_path = symlink_path
         .to_str()
         .ok_or(io::Error::new(io::ErrorKind::InvalidData, "cannot parse"))?;
-    info!("current package is {CURRENT_PKG}, log is output to {}", symlink_path);
+    info!(
+        "current package is {CURRENT_PKG}, log is output to {}",
+        symlink_path
+    );
     log
 }
 

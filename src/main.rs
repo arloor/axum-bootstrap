@@ -1,15 +1,12 @@
 #![deny(warnings)]
 
-use axum_bootstrap::{util::http::init_http_client, TlsParam};
+use axum_bootstrap::{util::{self, http::init_http_client}, TlsParam};
 
 use clap::Parser;
 use handler::{build_router, AppState};
-use tracing_subscriber::layer::SubscriberExt as _;
-use tracing_subscriber::util::SubscriberInitExt;
 
 mod handler;
 mod metrics;
-
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 
 /// axum脚手架
@@ -34,23 +31,7 @@ pub(crate) static PARAM: std::sync::LazyLock<Param> = std::sync::LazyLock::new(P
 #[tokio::main]
 pub async fn main() -> Result<(), DynError> {
     // util::env_logger::init_log();
-
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                format!("{}=debug,tower_http=info", env!("CARGO_CRATE_NAME")).into()
-            }),
-        )
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_thread_ids(true)
-                // .with_timer(tracing_subscriber::fmt::time::LocalTime::rfc_3339()),
-                .with_timer(
-                    tracing_subscriber::fmt::time::OffsetTime::local_rfc_3339() // 这个需要放在tokio runtime fork thread之前
-                        .expect("could not get local offset!"),
-                ),
-        )
-        .init();
+    util::tracing_init::init_tracing_subscriber(env!("CARGO_CRATE_NAME"))?;
     log::info!("init http client...");
     let client = init_http_client(&PARAM.http_proxy).await?;
 

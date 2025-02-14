@@ -4,3 +4,4 @@ pub(crate) mod io;
 pub mod json;
 pub(crate) mod logx;
 pub(crate) mod tls;
+pub mod tracing_init;
