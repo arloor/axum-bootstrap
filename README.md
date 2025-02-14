@@ -31,4 +31,4 @@ docker run -d --rm  --name mysql \
 -e MYSQL_DATABASE=test \
 -e MYSQL_ROOT_PASSWORD=xxxxxx \
 docker.io/library/mysql:9.1 
-``
+```
