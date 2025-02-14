@@ -46,7 +46,7 @@ pub async fn main() -> Result<(), DynError> {
                 .with_thread_ids(true)
                 // .with_timer(tracing_subscriber::fmt::time::LocalTime::rfc_3339()),
                 .with_timer(
-                    tracing_subscriber::fmt::time::OffsetTime::local_rfc_3339()
+                    tracing_subscriber::fmt::time::OffsetTime::local_rfc_3339() // 这个需要放在tokio runtime fork thread之前
                         .expect("could not get local offset!"),
                 ),
         )
