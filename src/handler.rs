@@ -49,7 +49,7 @@ pub(crate) fn build_router(app_state: AppState) -> Router {
                 // path is useful for figuring out which handler the request was routed to.
                 .make_span_with(|req: &Request| {
                     let method = req.method();
-                    let uri = req.uri();
+                    let path = req.uri().path();
 
                     // axum automatically adds this extension.
                     let matched_path = req
@@ -57,7 +57,7 @@ pub(crate) fn build_router(app_state: AppState) -> Router {
                         .get::<MatchedPath>()
                         .map(|matched_path| matched_path.as_str());
 
-                    tracing::debug_span!("request", %method, %uri, matched_path)
+                    tracing::debug_span!("request", %method, %path, matched_path)
                 })
                 // By default `TraceLayer` will log 5xx responses but we're doing our specific
                 // logging of errors so disable that
