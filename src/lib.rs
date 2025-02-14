@@ -215,7 +215,7 @@ impl IntoResponse for AppError {
         let err=self.0;
         // Because `TraceLayer` wraps each request in a span that contains the request
         // method, uri, etc we don't need to include those details here
-        tracing::error!(%err, "error from time_library");
+        tracing::error!(%err, "error");
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Something went wrong: {}", &err),

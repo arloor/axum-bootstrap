@@ -38,7 +38,7 @@ pub async fn main() -> Result<(), DynError> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                format!("{}=debug,tower_http=debug", env!("CARGO_CRATE_NAME")).into()
+                format!("{}=debug,tower_http=info", env!("CARGO_CRATE_NAME")).into()
             }),
         )
         .with(
