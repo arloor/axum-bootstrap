@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 pub mod util;
+pub mod init_log;
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 use crate::util::{
     io::{self, create_dual_stack_listener},
