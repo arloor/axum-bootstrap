@@ -27,11 +27,11 @@ pub struct Param {
 
 // 可以在这里进行一些预处理
 pub(crate) static PARAM: std::sync::LazyLock<Param> = std::sync::LazyLock::new(Param::parse);
-
+const CARGO_CRATE_NAME: &str = env!("CARGO_CRATE_NAME");
 #[tokio::main]
 pub async fn main() -> Result<(), DynError> {
-    // util::env_logger::init_log();
-    axum_bootstrap::init_log::tracing::init(env!("CARGO_CRATE_NAME"))?;
+    axum_bootstrap::init_log::tracing::init(CARGO_CRATE_NAME)?;
+    // axum_bootstrap::init_log::env_logger::init(CARGO_CRATE_NAME);
     log::info!("init http client...");
     let client = init_http_client(&PARAM.http_proxy).await?;
 
