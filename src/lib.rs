@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
-pub mod util;
 pub mod init_log;
+pub mod util;
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 use crate::util::{
     io::{self, create_dual_stack_listener},
@@ -29,32 +29,17 @@ pub struct TlsParam {
     pub key: String,
 }
 
-pub async fn axum_serve(
-    router: Router,
-    port: u16,
-    tls_param: Option<TlsParam>,
-) -> Result<(), DynError> {
+pub async fn axum_serve(router: Router, port: u16, tls_param: Option<TlsParam>) -> Result<(), DynError> {
     let use_tls = match tls_param.clone() {
         Some(config) => config.tls,
         None => false,
     };
     log::info!("listening on port {port}, use_tls: {use_tls}",);
-    let server: hyper_util::server::conn::auto::Builder<TokioExecutor> =
-        hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
-    let graceful: hyper_util::server::graceful::GracefulShutdown =
-        hyper_util::server::graceful::GracefulShutdown::new();
+    let server: hyper_util::server::conn::auto::Builder<TokioExecutor> = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+    let graceful: hyper_util::server::graceful::GracefulShutdown = hyper_util::server::graceful::GracefulShutdown::new();
     match use_tls {
         #[allow(clippy::expect_used)]
-        true => {
-            serve_tls(
-                &router,
-                server,
-                graceful,
-                port,
-                tls_param.expect("should be some"),
-            )
-            .await?
-        }
+        true => serve_tls(&router, server, graceful, port, tls_param.expect("should be some")).await?,
         false => serve_plantext(&router, server, graceful, port).await?,
     }
     Ok(())
@@ -69,10 +54,7 @@ macro_rules! handle_connection {
                 use hyper::Request;
                 use hyper_util::rt::TokioIo;
                 let stream = TokioIo::new(timeout_io);
-                let hyper_service =
-                    hyper::service::service_fn(move |request: Request<Incoming>| {
-                        tower_service.clone().call(request)
-                    });
+                let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| tower_service.clone().call(request));
 
                 let conn = $server.serve_connection_with_upgrades(stream, hyper_service);
                 let conn = $graceful.watch(conn.into_owned());
@@ -92,10 +74,7 @@ macro_rules! handle_connection {
 }
 
 async fn serve_plantext(
-    app: &Router,
-    server: hyper_util::server::conn::auto::Builder<TokioExecutor>,
-    graceful: hyper_util::server::graceful::GracefulShutdown,
-    port: u16,
+    app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown, port: u16,
 ) -> Result<(), DynError> {
     use hyper::body::Incoming;
     let listener = create_dual_stack_listener(port).await?;
@@ -125,11 +104,8 @@ async fn serve_plantext(
 }
 
 async fn serve_tls(
-    app: &Router,
-    server: hyper_util::server::conn::auto::Builder<TokioExecutor>,
-    graceful: hyper_util::server::graceful::GracefulShutdown,
-    port: u16,
-    tls_param: TlsParam,
+    app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown,
+    port: u16, tls_param: TlsParam,
 ) -> Result<(), DynError> {
     let (tx, _rx) = broadcast::channel::<Arc<ServerConfig>>(10);
     let tx_clone = tx.clone();
@@ -148,10 +124,7 @@ async fn serve_tls(
     });
     let mut rx = tx_clone.subscribe();
     use hyper::body::Incoming;
-    let mut acceptor: TlsAcceptor = TlsAcceptor::new(
-        tls_config(&tls_param.key, &tls_param.cert)?,
-        create_dual_stack_listener(port).await?,
-    );
+    let mut acceptor: TlsAcceptor = TlsAcceptor::new(tls_config(&tls_param.key, &tls_param.cert)?, create_dual_stack_listener(port).await?);
     let signal = handle_signal();
     pin!(signal);
     loop {
@@ -213,15 +186,11 @@ pub struct AppError(anyhow::Error);
 // Tell axum how to convert `AppError` into a response.
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        let err=self.0;
+        let err = self.0;
         // Because `TraceLayer` wraps each request in a span that contains the request
         // method, uri, etc we don't need to include those details here
         tracing::error!(%err, "error");
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Something went wrong: {}", &err),
-        )
-            .into_response()
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("Something went wrong: {}", &err)).into_response()
     }
 }
 

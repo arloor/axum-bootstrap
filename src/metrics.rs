@@ -10,10 +10,7 @@ pub(crate) static METRIC: LazyLock<Metrics> = LazyLock::new(|| {
     let mut prom_registry = Registry::default();
     let req_count = Family::<HttpReqLabel, Counter>::default();
     prom_registry.register("req_count", "help", req_count.clone());
-    Metrics {
-        prom_registry,
-        req_count,
-    }
+    Metrics { prom_registry, req_count }
 });
 
 pub(crate) struct Metrics {

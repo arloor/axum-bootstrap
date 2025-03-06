@@ -1,6 +1,6 @@
-use std::{borrow::Cow, fmt};
 use std::fmt::Display;
 use std::str::FromStr;
+use std::{borrow::Cow, fmt};
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
@@ -111,8 +111,7 @@ pub mod my_date_format_option {
     {
         match Option::<String>::deserialize(deserializer)? {
             Some(s) => {
-                let dt =
-                    NaiveDateTime::parse_from_str(&s, FORMAT).map_err(serde::de::Error::custom)?;
+                let dt = NaiveDateTime::parse_from_str(&s, FORMAT).map_err(serde::de::Error::custom)?;
                 Ok(Some(dt))
             }
             None => Ok(None),

@@ -5,14 +5,10 @@ pub fn tls_config(key: &String, cert: &String) -> Result<Arc<ServerConfig>, DynE
     use std::io::{self, BufReader};
     let key_file = File::open(key).map_err(|_| "open private key failed")?;
     let cert_file = File::open(cert).map_err(|_| "open cert failed")?;
-    let certs = rustls_pemfile::certs(&mut BufReader::new(cert_file))
-        .collect::<io::Result<Vec<rustls_pki_types::CertificateDer<'static>>>>()?;
-    let key = rustls_pemfile::private_key(&mut BufReader::new(key_file))?
-        .ok_or("can not find any pem in key file")?;
+    let certs = rustls_pemfile::certs(&mut BufReader::new(cert_file)).collect::<io::Result<Vec<rustls_pki_types::CertificateDer<'static>>>>()?;
+    let key = rustls_pemfile::private_key(&mut BufReader::new(key_file))?.ok_or("can not find any pem in key file")?;
 
-    let mut config = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)?;
+    let mut config = ServerConfig::builder().with_no_client_auth().with_single_cert(certs, key)?;
     config.alpn_protocols = vec![
         b"h2".to_vec(),       // http2
         b"http/1.1".to_vec(), // http1.1
@@ -21,10 +17,7 @@ pub fn tls_config(key: &String, cert: &String) -> Result<Arc<ServerConfig>, DynE
 }
 
 #[allow(dead_code)]
-pub fn rust_tls_acceptor(
-    key: &String,
-    cert: &String,
-) -> Result<tokio_rustls::TlsAcceptor, DynError> {
+pub fn rust_tls_acceptor(key: &String, cert: &String) -> Result<tokio_rustls::TlsAcceptor, DynError> {
     Ok(tls_config(key, cert)?.into())
 }
 
@@ -112,11 +105,7 @@ impl<C: AsyncRead + AsyncWrite + Unpin> TlsStream<C> {
 }
 
 impl<C: AsyncRead + AsyncWrite + Unpin> AsyncRead for TlsStream<C> {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &mut ReadBuf,
-    ) -> Poll<io::Result<()>> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context, buf: &mut ReadBuf) -> Poll<io::Result<()>> {
         let pin = self.get_mut();
         let accept = match &mut pin.state {
             State::Handshaking(accept) => accept,
@@ -135,11 +124,7 @@ impl<C: AsyncRead + AsyncWrite + Unpin> AsyncRead for TlsStream<C> {
 }
 
 impl<C: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsStream<C> {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
         let pin = self.get_mut();
         let accept = match &mut pin.state {
             State::Handshaking(accept) => accept,

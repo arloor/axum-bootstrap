@@ -18,9 +18,7 @@ use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::Subs
 
 use axum_bootstrap::{util::json::StupidValue, AppError};
 use tokio::time::sleep;
-use tower_http::{
-    compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer,
-};
+use tower_http::{compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 
 use crate::metrics::{HttpReqLabel, METRIC};
 
@@ -52,10 +50,7 @@ pub(crate) fn build_router(app_state: AppState) -> Router {
                     let path = req.uri().path();
 
                     // axum automatically adds this extension.
-                    let matched_path = req
-                        .extensions()
-                        .get::<MatchedPath>()
-                        .map(|matched_path| matched_path.as_str());
+                    let matched_path = req.extensions().get::<MatchedPath>().map(|matched_path| matched_path.as_str());
 
                     tracing::debug_span!("request", %method, %path, matched_path)
                 })
@@ -79,30 +74,15 @@ pub(crate) async fn metrics_handler() -> Result<(StatusCode, String), AppError> 
 }
 
 pub(crate) async fn error_func() -> Result<(StatusCode, String), AppError> {
-    Err(AppError::new(io::Error::new(
-        io::ErrorKind::Other,
-        "MOCK error",
-    )))
+    Err(AppError::new(io::Error::new(io::ErrorKind::Other, "MOCK error")))
 }
 
 #[debug_handler]
-pub(crate) async fn data_handler(
-    State(state): State<Arc<AppState>>,
-    req: Json<DataRequest>,
-) -> (StatusCode, HeaderMap, Json<Response<Vec<Data>>>) {
-    METRIC
-        .req_count
-        .get_or_create(&HttpReqLabel {
-            path: "test".to_string(),
-        })
-        .inc();
+pub(crate) async fn data_handler(State(state): State<Arc<AppState>>, req: Json<DataRequest>) -> (StatusCode, HeaderMap, Json<Response<Vec<Data>>>) {
+    METRIC.req_count.get_or_create(&HttpReqLabel { path: "test".to_string() }).inc();
     info!("req: {:?}", req);
     #[cfg(not(feature = "mysql"))]
-    return (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        some_headers(),
-        Json(Response::error("mysql not enabled".to_string())),
-    );
+    return (StatusCode::INTERNAL_SERVER_ERROR, some_headers(), Json(Response::error("mysql not enabled".to_string())));
     #[cfg(feature = "mysql")]
     {
         use std::borrow::Borrow;
@@ -122,11 +102,7 @@ pub(crate) async fn data_handler(
             ),
             Err(e) => {
                 log::warn!("query now failed: {:?}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    some_headers(),
-                    Json(Response::error(format!("query now failed: {:?}", e))),
-                )
+                (StatusCode::INTERNAL_SERVER_ERROR, some_headers(), Json(Response::error(format!("query now failed: {:?}", e))))
             }
         }
     }
@@ -134,17 +110,9 @@ pub(crate) async fn data_handler(
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct DataRequest {
-    #[serde(
-        rename = "startTime",
-        with = "axum_bootstrap::util::json::my_date_format_option",
-        default
-    )]
+    #[serde(rename = "startTime", with = "axum_bootstrap::util::json::my_date_format_option", default)]
     pub(crate) start_time: Option<NaiveDateTime>,
-    #[serde(
-        rename = "endTime",
-        with = "axum_bootstrap::util::json::my_date_format_option",
-        default
-    )]
+    #[serde(rename = "endTime", with = "axum_bootstrap::util::json::my_date_format_option", default)]
     pub(crate) end_time: Option<NaiveDateTime>,
     #[serde(rename = "distinctCode", default)]
     pub(crate) distinct_code: StupidValue<bool>,

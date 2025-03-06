@@ -7,8 +7,6 @@ pub async fn init_http_client(http_proxy: &str) -> Result<Client, DynError> {
     if http_proxy.is_empty() {
         Ok(client_builder.build()?)
     } else {
-        Ok(client_builder
-            .proxy(reqwest::Proxy::all(http_proxy)?)
-            .build()?)
+        Ok(client_builder.proxy(reqwest::Proxy::all(http_proxy)?).build()?)
     }
 }
