@@ -12,6 +12,7 @@ use axum::{
     response::{IntoResponse, Response},
     Router,
 };
+
 use hyper::StatusCode;
 use hyper_util::rt::TokioExecutor;
 use log::{info, warn};
@@ -45,31 +46,32 @@ pub async fn axum_serve(router: Router, port: u16, tls_param: Option<TlsParam>) 
     Ok(())
 }
 
-macro_rules! handle_connection {
-    ($conn:expr, $client_socket_addr:expr, $app:expr, $server:expr, $graceful:expr) => {
-        let tower_service = $app.clone();
-        let timeout_io = Box::pin(io::TimeoutIO::new($conn, Duration::from_secs(120)));
-        use hyper::Request;
-        use hyper_util::rt::TokioIo;
-        let stream = TokioIo::new(timeout_io);
-        let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| tower_service.clone().call(request));
+fn handle_connection<C>(
+    conn: C, client_socket_addr: std::net::SocketAddr, app: Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>,
+    graceful: &hyper_util::server::graceful::GracefulShutdown,
+) where
+    C: tokio::io::AsyncRead + tokio::io::AsyncWrite + 'static + Send + Sync,
+{
+    let timeout_io = Box::pin(io::TimeoutIO::new(conn, Duration::from_secs(120)));
+    use hyper::Request;
+    use hyper_util::rt::TokioIo;
+    let stream = TokioIo::new(timeout_io);
+    let hyper_service = hyper::service::service_fn(move |request: Request<hyper::body::Incoming>| app.clone().call(request));
 
-        let conn = $server.serve_connection_with_upgrades(stream, hyper_service);
-        let conn = $graceful.watch(conn.into_owned());
+    let conn = server.serve_connection_with_upgrades(stream, hyper_service);
+    let conn = graceful.watch(conn.into_owned());
 
-        tokio::spawn(async move {
-            if let Err(err) = conn.await {
-                info!("connection error: {}", err);
-            }
-            log::debug!("connection dropped: {}", $client_socket_addr);
-        });
-    };
+    tokio::spawn(async move {
+        if let Err(err) = conn.await {
+            info!("connection error: {}", err);
+        }
+        log::debug!("connection dropped: {}", client_socket_addr);
+    });
 }
 
 async fn serve_plantext(
     app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown, port: u16,
 ) -> Result<(), DynError> {
-    use hyper::body::Incoming;
     let listener = create_dual_stack_listener(port).await?;
     let signal = handle_signal();
     pin!(signal);
@@ -83,7 +85,7 @@ async fn serve_plantext(
             conn = listener.accept() => {
                 match conn {
                     Ok((conn, client_socket_addr)) => {
-                        handle_connection!(conn,client_socket_addr, app, server, graceful);}
+                        handle_connection(conn,client_socket_addr, app.clone(), server.clone(), &graceful);}
                     Err(e) => {
                         warn!("accept error:{}", e);
                     }
@@ -122,7 +124,6 @@ async fn serve_tls(
         }
     });
     let mut rx = tx_clone.subscribe();
-    use hyper::body::Incoming;
     let mut acceptor: TlsAcceptor = TlsAcceptor::new(tls_config(&tls_param.key, &tls_param.cert)?, create_dual_stack_listener(port).await?);
     let signal = handle_signal();
     pin!(signal);
@@ -143,7 +144,7 @@ async fn serve_tls(
             conn = acceptor.accept() => {
                 match conn {
                     Ok((conn, client_socket_addr)) => {
-                        handle_connection!(conn,client_socket_addr, app, server, graceful);}
+                        handle_connection(conn,client_socket_addr, app.clone(), server.clone(), &graceful);}
                     Err(e) => {
                         warn!("accept error:{}", e);
                     }
