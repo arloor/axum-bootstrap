@@ -46,30 +46,23 @@ pub async fn axum_serve(router: Router, port: u16, tls_param: Option<TlsParam>) 
 }
 
 macro_rules! handle_connection {
-    ($conn:expr, $app:expr, $server:expr, $graceful:expr) => {
-        match $conn {
-            Ok((conn, client_socket_addr)) => {
-                let tower_service = $app.clone();
-                let timeout_io = Box::pin(io::TimeoutIO::new(conn, Duration::from_secs(120)));
-                use hyper::Request;
-                use hyper_util::rt::TokioIo;
-                let stream = TokioIo::new(timeout_io);
-                let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| tower_service.clone().call(request));
+    ($conn:expr, $client_socket_addr:expr, $app:expr, $server:expr, $graceful:expr) => {
+        let tower_service = $app.clone();
+        let timeout_io = Box::pin(io::TimeoutIO::new($conn, Duration::from_secs(120)));
+        use hyper::Request;
+        use hyper_util::rt::TokioIo;
+        let stream = TokioIo::new(timeout_io);
+        let hyper_service = hyper::service::service_fn(move |request: Request<Incoming>| tower_service.clone().call(request));
 
-                let conn = $server.serve_connection_with_upgrades(stream, hyper_service);
-                let conn = $graceful.watch(conn.into_owned());
+        let conn = $server.serve_connection_with_upgrades(stream, hyper_service);
+        let conn = $graceful.watch(conn.into_owned());
 
-                tokio::spawn(async move {
-                    if let Err(err) = conn.await {
-                        info!("connection error: {}", err);
-                    }
-                    log::debug!("connection dropped: {}", client_socket_addr);
-                });
+        tokio::spawn(async move {
+            if let Err(err) = conn.await {
+                info!("connection error: {}", err);
             }
-            Err(err) => {
-                warn!("Error accepting connection: {}", err);
-            }
-        }
+            log::debug!("connection dropped: {}", $client_socket_addr);
+        });
     };
 }
 
@@ -88,7 +81,13 @@ async fn serve_plantext(
                 break;
             }
             conn = listener.accept() => {
-                handle_connection!(conn, app, server, graceful);
+                match conn {
+                    Ok((conn, client_socket_addr)) => {
+                        handle_connection!(conn,client_socket_addr, app, server, graceful);}
+                    Err(e) => {
+                        warn!("accept error:{}", e);
+                    }
+                }
             }
         }
     }
@@ -142,7 +141,13 @@ async fn serve_tls(
                 info!("replaced tls config");
             }
             conn = acceptor.accept() => {
-                handle_connection!(conn, app, server, graceful);
+                match conn {
+                    Ok((conn, client_socket_addr)) => {
+                        handle_connection!(conn,client_socket_addr, app, server, graceful);}
+                    Err(e) => {
+                        warn!("accept error:{}", e);
+                    }
+                }
             }
         }
     }
