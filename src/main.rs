@@ -1,6 +1,6 @@
 #![deny(warnings)]
 
-use axum_bootstrap::{util::http::init_http_client, TlsParam};
+use axum_bootstrap::{util::http::init_http_client, DummyInterceptor, TlsParam};
 
 use clap::Parser;
 use handler::{build_router, AppState};
@@ -64,14 +64,14 @@ pub async fn main() -> Result<(), DynError> {
                 }),
                 false => None,
             },
+            None,
         )
         .await?;
     }
 
     #[cfg(not(feature = "mysql"))]
     {
-        axum_bootstrap::axum_serve(
-            build_router(AppState { client }),
+        axum_bootstrap::Server::<DummyInterceptor>::new(
             PARAM.port,
             match PARAM.tls {
                 true => Some(TlsParam {
@@ -81,7 +81,10 @@ pub async fn main() -> Result<(), DynError> {
                 }),
                 false => None,
             },
+            None,
+            build_router(AppState { client }),
         )
+        .run()
         .await?;
     }
 
