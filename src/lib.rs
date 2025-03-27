@@ -13,7 +13,11 @@ use axum::{
     Router,
 };
 
-use hyper::StatusCode;
+use futures_util::stream::Concat;
+use hyper::{
+    body::{Body, Incoming},
+    Request, StatusCode,
+};
 use hyper_util::rt::TokioExecutor;
 use log::{info, warn};
 use tokio::{pin, sync::broadcast, time};
@@ -23,6 +27,13 @@ use tower_service::Service;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60 * 24);
 const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
+pub struct Server<I: ReqInterceptor> {
+    pub port: u16,
+    pub tls_param: Option<TlsParam>,
+    pub interceptor: Option<I>,
+    router: Router,
+}
+
 #[derive(Debug, Clone)]
 pub struct TlsParam {
     pub tls: bool,
@@ -30,33 +41,91 @@ pub struct TlsParam {
     pub key: String,
 }
 
-pub async fn axum_serve(router: Router, port: u16, tls_param: Option<TlsParam>) -> Result<(), DynError> {
-    let use_tls = match tls_param.clone() {
-        Some(config) => config.tls,
-        None => false,
-    };
-    log::info!("listening on port {port}, use_tls: {use_tls}",);
-    let server: hyper_util::server::conn::auto::Builder<TokioExecutor> = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
-    let graceful: hyper_util::server::graceful::GracefulShutdown = hyper_util::server::graceful::GracefulShutdown::new();
-    match use_tls {
-        #[allow(clippy::expect_used)]
-        true => serve_tls(&router, server, graceful, port, tls_param.expect("should be some")).await?,
-        false => serve_plantext(&router, server, graceful, port).await?,
-    }
-    Ok(())
+pub enum InterceptResult {
+    Return(Response),
+    Continue(Request<Incoming>),
+    Error(AppError),
 }
 
-fn handle_connection<C>(
+pub trait ReqInterceptor {
+    fn intercept(&self, req: Request<Incoming>) -> InterceptResult;
+}
+#[derive(Clone)]
+pub struct DummyInterceptor;
+
+impl ReqInterceptor for DummyInterceptor {
+    fn intercept(&self, req: Request<Incoming>) -> InterceptResult {
+        InterceptResult::Continue(req)
+    }
+}
+
+impl<I> Server<I>
+where
+    I: ReqInterceptor + Clone + Send + Sync + 'static,
+{
+    pub fn new(port: u16, tls_param: Option<TlsParam>, interceptor: Option<I>, router: Router) -> Self {
+        Self {
+            port,
+            tls_param,
+            interceptor,
+            router,
+        }
+    }
+
+    pub async fn run(&self) -> Result<(), DynError> {
+        let use_tls = match self.tls_param.clone() {
+            Some(config) => config.tls,
+            None => false,
+        };
+        log::info!("listening on port {}, use_tls: {}", self.port, use_tls);
+        let server: hyper_util::server::conn::auto::Builder<TokioExecutor> = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
+        let graceful: hyper_util::server::graceful::GracefulShutdown = hyper_util::server::graceful::GracefulShutdown::new();
+        match use_tls {
+            #[allow(clippy::expect_used)]
+            true => {
+                serve_tls(&self.router, server, graceful, self.port, self.tls_param.as_ref().expect("should be some"), self.interceptor.clone())
+                    .await?
+            }
+            false => serve_plantext(&self.router, server, graceful, self.port, self.interceptor.clone()).await?,
+        }
+        Ok(())
+    }
+}
+
+async fn handle<I>(request: Request<Incoming>, mut app: Router, interceptor: Option<I>) -> std::result::Result<Response, std::convert::Infallible>
+where
+    I: ReqInterceptor + Clone + Send + Sync + 'static,
+{
+    if let Some(interceptor) = interceptor {
+        match interceptor.intercept(request) {
+            InterceptResult::Continue(req) => {
+                let res = app.call(req).await.into_response();
+                Ok(res)
+            }
+            InterceptResult::Return(res) => Ok(res),
+            InterceptResult::Error(err) => {
+                let res = err.into_response();
+                Ok(res)
+            }
+        }
+    } else {
+        let res = app.call(request).await.into_response();
+        Ok(res)
+    }
+}
+
+fn handle_connection<C, I>(
     conn: C, client_socket_addr: std::net::SocketAddr, app: Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>,
-    graceful: &hyper_util::server::graceful::GracefulShutdown,
+    interceptor: Option<I>, graceful: &hyper_util::server::graceful::GracefulShutdown,
 ) where
     C: tokio::io::AsyncRead + tokio::io::AsyncWrite + 'static + Send + Sync,
+    I: ReqInterceptor + Clone + Send + Sync + 'static,
 {
     let timeout_io = Box::pin(io::TimeoutIO::new(conn, Duration::from_secs(120)));
     use hyper::Request;
     use hyper_util::rt::TokioIo;
     let stream = TokioIo::new(timeout_io);
-    let hyper_service = hyper::service::service_fn(move |request: Request<hyper::body::Incoming>| app.clone().call(request));
+    let hyper_service = hyper::service::service_fn(move |request: Request<hyper::body::Incoming>| handle(request, app.clone(), interceptor.clone()));
 
     let conn = server.serve_connection_with_upgrades(stream, hyper_service);
     let conn = graceful.watch(conn.into_owned());
@@ -69,9 +138,13 @@ fn handle_connection<C>(
     });
 }
 
-async fn serve_plantext(
-    app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown, port: u16,
-) -> Result<(), DynError> {
+async fn serve_plantext<I>(
+    app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown,
+    port: u16, interceptor: Option<I>,
+) -> Result<(), DynError>
+where
+    I: ReqInterceptor + Clone + Send + Sync + 'static,
+{
     let listener = create_dual_stack_listener(port).await?;
     let signal = handle_signal();
     pin!(signal);
@@ -85,7 +158,7 @@ async fn serve_plantext(
             conn = listener.accept() => {
                 match conn {
                     Ok((conn, client_socket_addr)) => {
-                        handle_connection(conn,client_socket_addr, app.clone(), server.clone(), &graceful);}
+                        handle_connection(conn,client_socket_addr, app.clone(), server.clone(),interceptor.clone(), &graceful);}
                     Err(e) => {
                         warn!("accept error:{}", e);
                     }
@@ -104,10 +177,13 @@ async fn serve_plantext(
     Ok(())
 }
 
-async fn serve_tls(
+async fn serve_tls<I>(
     app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown,
-    port: u16, tls_param: TlsParam,
-) -> Result<(), DynError> {
+    port: u16, tls_param: &TlsParam, interceptor: Option<I>,
+) -> Result<(), DynError>
+where
+    I: ReqInterceptor + Clone + Send + Sync + 'static,
+{
     let (tx, _rx) = broadcast::channel::<Arc<ServerConfig>>(10);
     let tx_clone = tx.clone();
     let tls_param_clone = tls_param.clone();
@@ -144,7 +220,7 @@ async fn serve_tls(
             conn = acceptor.accept() => {
                 match conn {
                     Ok((conn, client_socket_addr)) => {
-                        handle_connection(conn,client_socket_addr, app.clone(), server.clone(), &graceful);}
+                        handle_connection(conn,client_socket_addr, app.clone(), server.clone(),interceptor.clone(), &graceful);}
                     Err(e) => {
                         warn!("accept error:{}", e);
                     }
