@@ -13,11 +13,7 @@ use axum::{
     Router,
 };
 
-use futures_util::stream::Concat;
-use hyper::{
-    body::{Body, Incoming},
-    Request, StatusCode,
-};
+use hyper::{body::Incoming, Request, StatusCode};
 use hyper_util::rt::TokioExecutor;
 use log::{info, warn};
 use tokio::{pin, sync::broadcast, time};
@@ -48,13 +44,14 @@ pub enum InterceptResult {
 }
 
 pub trait ReqInterceptor {
-    fn intercept(&self, req: Request<Incoming>) -> InterceptResult;
+    fn intercept(&self, req: Request<Incoming>) -> impl std::future::Future<Output = InterceptResult> + Send;
 }
+
 #[derive(Clone)]
 pub struct DummyInterceptor;
 
 impl ReqInterceptor for DummyInterceptor {
-    fn intercept(&self, req: Request<Incoming>) -> InterceptResult {
+    async fn intercept(&self, req: Request<Incoming>) -> InterceptResult {
         InterceptResult::Continue(req)
     }
 }
@@ -97,7 +94,7 @@ where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
 {
     if let Some(interceptor) = interceptor {
-        match interceptor.intercept(request) {
+        match interceptor.intercept(request).await {
             InterceptResult::Continue(req) => {
                 let res = app.call(req).await.into_response();
                 Ok(res)
