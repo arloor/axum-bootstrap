@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{fmt::Display, net::SocketAddr, sync::Arc, time::Duration};
 
 pub mod init_log;
 pub mod util;
@@ -294,7 +294,18 @@ async fn handle_signal() -> Result<(), DynError> {
 }
 
 // Make our own error that wraps `anyhow::Error`.
+#[derive(Debug)]
 pub struct AppError(anyhow::Error);
+
+impl Display for AppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Display the error message from the wrapped `anyhow::Error`.
+        // This will be used when converting to a string for logging or output.
+        let err = &self.0;
+        // Use the `Display` implementation of `anyhow::Error`
+        write!(f, "{}", err)
+    }
+}
 
 // Tell axum how to convert `AppError` into a response.
 impl IntoResponse for AppError {
