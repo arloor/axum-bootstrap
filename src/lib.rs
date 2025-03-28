@@ -299,11 +299,7 @@ pub struct AppError(anyhow::Error);
 
 impl Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Display the error message from the wrapped `anyhow::Error`.
-        // This will be used when converting to a string for logging or output.
-        let err = &self.0;
-        // Use the `Display` implementation of `anyhow::Error`
-        write!(f, "{}", err)
+        self.0.fmt(f)
     }
 }
 
