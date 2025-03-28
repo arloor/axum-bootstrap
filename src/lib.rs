@@ -56,15 +56,26 @@ impl ReqInterceptor for DummyInterceptor {
     }
 }
 
+pub type DefaultServer = Server<DummyInterceptor>;
+
 impl<I> Server<I>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
 {
-    pub fn new(port: u16, tls_param: Option<TlsParam>, interceptor: Option<I>, router: Router) -> Self {
+    pub fn new(port: u16, tls_param: Option<TlsParam>, router: Router) -> Self {
         Self {
             port,
             tls_param,
-            interceptor,
+            interceptor: None,
+            router,
+        }
+    }
+
+    pub fn new_with_interceptor(port: u16, tls_param: Option<TlsParam>, interceptor: I, router: Router) -> Self {
+        Self {
+            port,
+            tls_param,
+            interceptor: Some(interceptor),
             router,
         }
     }

@@ -1,6 +1,6 @@
 #![deny(warnings)]
 
-use axum_bootstrap::{util::http::init_http_client, DummyInterceptor, TlsParam};
+use axum_bootstrap::{util::http::init_http_client, TlsParam};
 
 use clap::Parser;
 use handler::{build_router, AppState};
@@ -40,7 +40,7 @@ pub async fn main() -> Result<(), DynError> {
         log::info!("connecting to mysql...");
         let pool: sqlx::Pool<sqlx::MySql> = sqlx_mysql::MySqlPoolOptions::new()
             .max_connections(20)
-            .acquire_timeout(Duration::from_secs(10))
+            .acquire_timeout(std::time::Duration::from_secs(10))
             // .connect("mysql://root:xxxxxx@127.0.0.1:3306/test?ssl-mode=Required&timezone=%2B08:00")
             .connect_with(
                 sqlx_mysql::MySqlConnectOptions::new()
@@ -53,25 +53,7 @@ pub async fn main() -> Result<(), DynError> {
             )
             .await?;
 
-        axum_bootstrap::axum_serve(
-            build_router(AppState { pool, client }),
-            PARAM.port as u16,
-            match PARAM.tls {
-                true => Some(TlsParam {
-                    tls: true,
-                    cert: PARAM.cert.to_string(),
-                    key: PARAM.key.to_string(),
-                }),
-                false => None,
-            },
-            None,
-        )
-        .await?;
-    }
-
-    #[cfg(not(feature = "mysql"))]
-    {
-        axum_bootstrap::Server::<DummyInterceptor>::new(
+        axum_bootstrap::DefaultServer::new(
             PARAM.port,
             match PARAM.tls {
                 true => Some(TlsParam {
@@ -81,7 +63,24 @@ pub async fn main() -> Result<(), DynError> {
                 }),
                 false => None,
             },
-            None,
+            build_router(AppState { pool, client }),
+        )
+        .run()
+        .await?;
+    }
+
+    #[cfg(not(feature = "mysql"))]
+    {
+        axum_bootstrap::DefaultServer::new(
+            PARAM.port,
+            match PARAM.tls {
+                true => Some(TlsParam {
+                    tls: true,
+                    cert: PARAM.cert.to_string(),
+                    key: PARAM.key.to_string(),
+                }),
+                false => None,
+            },
             build_router(AppState { client }),
         )
         .run()
