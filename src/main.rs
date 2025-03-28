@@ -1,5 +1,7 @@
 #![deny(warnings)]
 
+use std::time::Duration;
+
 use axum_bootstrap::{util::http::init_http_client, TlsParam};
 
 use clap::Parser;
@@ -64,6 +66,7 @@ pub async fn main() -> Result<(), DynError> {
                 false => None,
             },
             build_router(AppState { pool, client }),
+            Duration::from_secs(120),
         )
         .run()
         .await?;
@@ -82,6 +85,7 @@ pub async fn main() -> Result<(), DynError> {
                 false => None,
             },
             build_router(AppState { client }),
+            Duration::from_secs(120),
         )
         .run()
         .await?;
