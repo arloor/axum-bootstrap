@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 pub mod init_log;
 pub mod util;
@@ -44,14 +44,14 @@ pub enum InterceptResult {
 }
 
 pub trait ReqInterceptor {
-    fn intercept(&self, req: Request<Incoming>) -> impl std::future::Future<Output = InterceptResult> + Send;
+    fn intercept(&self, req: Request<Incoming>, ip: SocketAddr) -> impl std::future::Future<Output = InterceptResult> + Send;
 }
 
 #[derive(Clone)]
 pub struct DummyInterceptor;
 
 impl ReqInterceptor for DummyInterceptor {
-    async fn intercept(&self, req: Request<Incoming>) -> InterceptResult {
+    async fn intercept(&self, req: Request<Incoming>, _ip: SocketAddr) -> InterceptResult {
         InterceptResult::Continue(req)
     }
 }
@@ -100,12 +100,14 @@ where
     }
 }
 
-async fn handle<I>(request: Request<Incoming>, mut app: Router, interceptor: Option<I>) -> std::result::Result<Response, std::convert::Infallible>
+async fn handle<I>(
+    request: Request<Incoming>, client_socket_addr: SocketAddr, mut app: Router, interceptor: Option<I>,
+) -> std::result::Result<Response, std::convert::Infallible>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
 {
     if let Some(interceptor) = interceptor {
-        match interceptor.intercept(request).await {
+        match interceptor.intercept(request, client_socket_addr).await {
             InterceptResult::Continue(req) => {
                 let res = app.call(req).await.into_response();
                 Ok(res)
@@ -133,7 +135,9 @@ fn handle_connection<C, I>(
     use hyper::Request;
     use hyper_util::rt::TokioIo;
     let stream = TokioIo::new(timeout_io);
-    let hyper_service = hyper::service::service_fn(move |request: Request<hyper::body::Incoming>| handle(request, app.clone(), interceptor.clone()));
+    let hyper_service = hyper::service::service_fn(move |request: Request<hyper::body::Incoming>| {
+        handle(request, client_socket_addr, app.clone(), interceptor.clone())
+    });
 
     let conn = server.serve_connection_with_upgrades(stream, hyper_service);
     let conn = graceful.watch(conn.into_owned());
