@@ -55,7 +55,7 @@ pub async fn main() -> Result<(), DynError> {
             )
             .await?;
 
-        axum_bootstrap::DefaultServer::new(
+        axum_bootstrap::new_server(
             PARAM.port,
             match PARAM.tls {
                 true => Some(TlsParam {
@@ -65,16 +65,16 @@ pub async fn main() -> Result<(), DynError> {
                 }),
                 false => None,
             },
-            build_router(AppState { pool, client }),
-            Duration::from_secs(120),
+            build_router(AppState { client, pool }),
         )
+        .with_timeout(Duration::from_secs(120))
         .run()
         .await?;
     }
 
     #[cfg(not(feature = "mysql"))]
     {
-        axum_bootstrap::DefaultServer::new(
+        axum_bootstrap::new_server(
             PARAM.port,
             match PARAM.tls {
                 true => Some(TlsParam {
@@ -85,8 +85,8 @@ pub async fn main() -> Result<(), DynError> {
                 false => None,
             },
             build_router(AppState { client }),
-            Duration::from_secs(120),
         )
+        .with_timeout(Duration::from_secs(120))
         .run()
         .await?;
     }

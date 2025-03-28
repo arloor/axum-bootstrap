@@ -23,7 +23,7 @@ use tower_service::Service;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60 * 24);
 const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
-pub struct Server<I: ReqInterceptor> {
+pub struct Server<I: ReqInterceptor = DummyInterceptor> {
     pub port: u16,
     pub tls_param: Option<TlsParam>,
     router: Router,
@@ -59,30 +59,33 @@ impl ReqInterceptor for DummyInterceptor {
 
 pub type DefaultServer = Server<DummyInterceptor>;
 
+pub fn new_server(port: u16, tls_param: Option<TlsParam>, router: Router) -> Server {
+    Server {
+        port,
+        tls_param,
+        router,
+        interceptor: None,
+        idle_timeout: Duration::from_secs(120),
+    }
+}
+
+pub fn new_server_with_interceptor<I>(port: u16, tls_param: Option<TlsParam>, interceptor: I, router: Router) -> Server<I>
+where
+    I: ReqInterceptor + Clone + Send + Sync + 'static,
+{
+    Server {
+        port,
+        tls_param,
+        router,
+        interceptor: Some(interceptor),
+        idle_timeout: Duration::from_secs(120),
+    }
+}
+
 impl<I> Server<I>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
 {
-    pub fn new(port: u16, tls_param: Option<TlsParam>, router: Router, idle_timeout: Duration) -> Self {
-        Self {
-            port,
-            tls_param,
-            router,
-            interceptor: None,
-            idle_timeout,
-        }
-    }
-
-    pub fn new_with_interceptor(port: u16, tls_param: Option<TlsParam>, interceptor: I, router: Router, idle_timeout: Duration) -> Self {
-        Self {
-            port,
-            tls_param,
-            router,
-            interceptor: Some(interceptor),
-            idle_timeout,
-        }
-    }
-
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.idle_timeout = timeout;
         self
