@@ -2,6 +2,13 @@
 name = "axum-bootstrap"
 version = "0.1.0"
 edition = "2021"
+authors = ["arloor <admin@arloor.com>"]
+license = "MIT OR Apache-2.0"
+rust-version = "1.80"
+repository = "https://github.com/arloor/axum-bootstrap"
+description = "a way to bootstrap a web server with axum, including TLS, logging, monitoring, and more."
+keywords = ["axum", "http-server"]
+readme = "README.md"
 
 [features]
 default = []
