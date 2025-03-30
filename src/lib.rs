@@ -129,7 +129,7 @@ where
 {
     if let Some(interceptor) = interceptor {
         match interceptor.intercept(request, client_socket_addr).await {
-            InterceptResult::Continue(req) => app.clone().oneshot(req).await,
+            InterceptResult::Continue(req) => app.oneshot(req).await,
             InterceptResult::Return(res) => Ok(res),
             InterceptResult::Error(err) => {
                 let res = err.into_response();
@@ -137,7 +137,7 @@ where
             }
         }
     } else {
-        app.clone().oneshot(request).await
+        app.oneshot(request).await
     }
 }
 
@@ -191,7 +191,7 @@ where
                 match conn {
                     Ok((conn, client_socket_addr)) => {
                         let app: axum::extract::connect_info::IntoMakeServiceWithConnectInfo<Router, SocketAddr> = app.clone().into_make_service_with_connect_info::<SocketAddr>();
-                        handle_connection(conn,client_socket_addr, app.clone(), server.clone(),interceptor.clone(), &graceful, timeout).await;}
+                        handle_connection(conn,client_socket_addr, app, server.clone(),interceptor.clone(), &graceful, timeout).await;}
                     Err(e) => {
                         warn!("accept error:{}", e);
                     }
@@ -254,7 +254,7 @@ where
                 match conn {
                     Ok((conn, client_socket_addr)) => {
                         let app: axum::extract::connect_info::IntoMakeServiceWithConnectInfo<Router, SocketAddr> = app.clone().into_make_service_with_connect_info::<SocketAddr>();
-                        handle_connection(conn,client_socket_addr, app.clone(), server.clone(),interceptor.clone(), &graceful, timeout).await;}
+                        handle_connection(conn,client_socket_addr, app, server.clone(),interceptor.clone(), &graceful, timeout).await;}
                     Err(e) => {
                         warn!("accept error:{}", e);
                     }
