@@ -142,9 +142,8 @@ where
 }
 
 async fn handle_connection<C, I>(
-    conn: C, client_socket_addr: std::net::SocketAddr, mut app: axum::extract::connect_info::IntoMakeServiceWithConnectInfo<Router, SocketAddr>,
-    server: hyper_util::server::conn::auto::Builder<TokioExecutor>, interceptor: Option<I>,
-    graceful: &hyper_util::server::graceful::GracefulShutdown, timeout: Duration,
+    conn: C, client_socket_addr: std::net::SocketAddr, app: Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>,
+    interceptor: Option<I>, graceful: &hyper_util::server::graceful::GracefulShutdown, timeout: Duration,
 ) where
     C: tokio::io::AsyncRead + tokio::io::AsyncWrite + 'static + Send + Sync,
     I: ReqInterceptor + Clone + Send + Sync + 'static,
@@ -153,6 +152,7 @@ async fn handle_connection<C, I>(
     use hyper::Request;
     use hyper_util::rt::TokioIo;
     let stream = TokioIo::new(timeout_io);
+    let mut app = app.into_make_service_with_connect_info::<SocketAddr>();
     let app: axum::middleware::AddExtension<Router, axum::extract::ConnectInfo<SocketAddr>> = unwrap_infallible(app.call(client_socket_addr).await);
     // https://github.com/tokio-rs/axum/blob/main/examples/serve-with-hyper/src/main.rs#L81
     let hyper_service = hyper::service::service_fn(move |request: Request<hyper::body::Incoming>| {
@@ -190,8 +190,7 @@ where
             conn = listener.accept() => {
                 match conn {
                     Ok((conn, client_socket_addr)) => {
-                        let app: axum::extract::connect_info::IntoMakeServiceWithConnectInfo<Router, SocketAddr> = app.clone().into_make_service_with_connect_info::<SocketAddr>();
-                        handle_connection(conn,client_socket_addr, app, server.clone(),interceptor.clone(), &graceful, timeout).await;}
+                        handle_connection(conn,client_socket_addr, app.clone(), server.clone(),interceptor.clone(), &graceful, timeout).await;}
                     Err(e) => {
                         warn!("accept error:{}", e);
                     }
@@ -253,8 +252,7 @@ where
             conn = acceptor.accept() => {
                 match conn {
                     Ok((conn, client_socket_addr)) => {
-                        let app: axum::extract::connect_info::IntoMakeServiceWithConnectInfo<Router, SocketAddr> = app.clone().into_make_service_with_connect_info::<SocketAddr>();
-                        handle_connection(conn,client_socket_addr, app, server.clone(),interceptor.clone(), &graceful, timeout).await;}
+                        handle_connection(conn,client_socket_addr, app.clone(), server.clone(),interceptor.clone(), &graceful, timeout).await;}
                     Err(e) => {
                         warn!("accept error:{}", e);
                     }
