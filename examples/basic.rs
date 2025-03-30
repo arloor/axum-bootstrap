@@ -93,10 +93,10 @@ pub async fn main() -> Result<(), DynError> {
 
 mod handler {
     #![allow(unused)]
-    use std::{io, sync::Arc, time::Duration};
+    use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 
     use axum::{
-        extract::{MatchedPath, Request, State},
+        extract::{ConnectInfo, MatchedPath, Request, State},
         http::HeaderValue,
         routing::get,
         Json, Router,
@@ -125,7 +125,7 @@ mod handler {
     pub(crate) fn build_router(app_state: AppState) -> Router {
         // build our application with a route
         Router::new()
-            .route("/", get(|| async { (StatusCode::OK, "OK") }))
+            .route("/", get(|ConnectInfo(addr): ConnectInfo<SocketAddr>| async move { (StatusCode::OK, format!("{addr}")) }))
             .route(
                 "/time",
                 get(|| async {
