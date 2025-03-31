@@ -9,9 +9,13 @@ pub fn init(env_cargo_crate_name: &str) -> Result<(), DynError> {
     let offset = UtcOffset::current_local_offset()?;
     let timer = OffsetTime::new(offset, format_description!("[year]-[month]-[day] [hour]:[minute]:[second]"));
     tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| format!("{env_cargo_crate_name}=debug,tower_http=error").into()),
-        )
+        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            if cfg!(debug_assertions) {
+                format!("info,{env_cargo_crate_name}=debug,tower_http=error").into()
+            } else {
+                format!("error,{env_cargo_crate_name}=info,tower_http=error").into()
+            }
+        }))
         .with(
             tracing_subscriber::fmt::layer().with_thread_ids(true).with_ansi(true).with_timer(timer),
             // .with_timer(tracing_subscriber::fmt::time::LocalTime::rfc_3339()), // 需要tracing-subscriber的local-time feature

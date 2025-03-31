@@ -29,8 +29,8 @@ pub(crate) static PARAM: std::sync::LazyLock<Param> = std::sync::LazyLock::new(P
 const CARGO_CRATE_NAME: &str = env!("CARGO_CRATE_NAME");
 #[tokio::main]
 pub async fn main() -> Result<(), DynError> {
-    // axum_bootstrap::init_log::tracing::init(CARGO_CRATE_NAME)?;
-    axum_bootstrap::init_log::env_logger::init(CARGO_CRATE_NAME);
+    axum_bootstrap::init_log::tracing::init(CARGO_CRATE_NAME)?;
+    // axum_bootstrap::init_log::env_logger::init(CARGO_CRATE_NAME);
     log::info!("init http client...");
     let client = init_http_client(&PARAM.http_proxy).await?;
 
