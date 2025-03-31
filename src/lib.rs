@@ -86,9 +86,9 @@ where
             idle_timeout: self.idle_timeout, // keep the same idle timeout
         }
     }
-    pub fn with_tls(mut self, tls_param: TlsParam) -> Self {
+    pub fn with_tls_param(mut self, tls_param: Option<TlsParam>) -> Self {
         // Enable TLS by setting the tls_param
-        self.tls_param = Some(tls_param);
+        self.tls_param = tls_param;
         self
     }
 
