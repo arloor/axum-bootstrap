@@ -60,25 +60,12 @@ impl ReqInterceptor for DummyInterceptor {
 
 pub type DefaultServer = Server<DummyInterceptor>;
 
-pub fn new_server(port: u16, tls_param: Option<TlsParam>, router: Router) -> Server {
+pub fn new_server(port: u16, router: Router) -> Server {
     Server {
         port,
-        tls_param,
+        tls_param: None, // No TLS by default
         router,
         interceptor: None,
-        idle_timeout: Duration::from_secs(120),
-    }
-}
-
-pub fn new_server_with_interceptor<I>(port: u16, tls_param: Option<TlsParam>, interceptor: I, router: Router) -> Server<I>
-where
-    I: ReqInterceptor + Clone + Send + Sync + 'static,
-{
-    Server {
-        port,
-        tls_param,
-        router,
-        interceptor: Some(interceptor),
         idle_timeout: Duration::from_secs(120),
     }
 }
@@ -87,6 +74,24 @@ impl<I> Server<I>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
 {
+    pub fn with_interceptor<R>(self: Server<I>, interceptor: R) -> Server<R>
+    where
+        R: ReqInterceptor + Clone + Send + Sync + 'static,
+    {
+        Server::<R> {
+            port: self.port,
+            tls_param: self.tls_param,
+            router: self.router,
+            interceptor: Some(interceptor),
+            idle_timeout: self.idle_timeout, // keep the same idle timeout
+        }
+    }
+    pub fn with_tls(mut self, tls_param: TlsParam) -> Self {
+        // Enable TLS by setting the tls_param
+        self.tls_param = Some(tls_param);
+        self
+    }
+
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.idle_timeout = timeout;
         self

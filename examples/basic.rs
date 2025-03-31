@@ -52,40 +52,30 @@ pub async fn main() -> Result<(), DynError> {
             )
             .await?;
 
-        axum_bootstrap::new_server(
-            PARAM.port,
-            match PARAM.tls {
-                true => Some(TlsParam {
-                    tls: true,
-                    cert: PARAM.cert.to_string(),
-                    key: PARAM.key.to_string(),
-                }),
-                false => None,
-            },
-            handler::build_router(handler::AppState { client, pool }),
-        )
-        .with_timeout(Duration::from_secs(120))
-        .run()
-        .await?;
+        let mut server =
+            axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client, pool })).with_timeout(Duration::from_secs(120));
+        if PARAM.tls {
+            server = server.with_tls(TlsParam {
+                tls: true,
+                cert: PARAM.cert.to_string(),
+                key: PARAM.key.to_string(),
+            })
+        }
+        server.run().await?;
     }
 
     #[cfg(not(feature = "mysql"))]
     {
-        axum_bootstrap::new_server(
-            PARAM.port,
-            match PARAM.tls {
-                true => Some(TlsParam {
-                    tls: true,
-                    cert: PARAM.cert.to_string(),
-                    key: PARAM.key.to_string(),
-                }),
-                false => None,
-            },
-            handler::build_router(handler::AppState { client }),
-        )
-        .with_timeout(Duration::from_secs(120))
-        .run()
-        .await?;
+        let mut server =
+            axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client })).with_timeout(Duration::from_secs(120));
+        if PARAM.tls {
+            server = server.with_tls(TlsParam {
+                tls: true,
+                cert: PARAM.cert.to_string(),
+                key: PARAM.key.to_string(),
+            })
+        }
+        server.run().await?;
     }
 
     Ok(())
