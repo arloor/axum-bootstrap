@@ -91,7 +91,7 @@ mod handler {
 
     use axum::{
         extract::{ConnectInfo, MatchedPath, Request, State},
-        http::HeaderValue,
+        http::{self, HeaderValue},
         routing::get,
         Json, Router,
     };
@@ -133,15 +133,7 @@ mod handler {
             .layer((
                 TraceLayer::new_for_http() // Create our own span for the request and include the matched path. The matched
                     // path is useful for figuring out which handler the request was routed to.
-                    .make_span_with(|req: &Request| {
-                        let method = req.method();
-                        let path = req.uri().path();
-
-                        // axum automatically adds this extension.
-                        let matched_path = req.extensions().get::<MatchedPath>().map(|matched_path| matched_path.as_str());
-
-                        tracing::debug_span!("request", %method, %path, matched_path)
-                    })
+                    .make_span_with(make_span)
                     // By default `TraceLayer` will log 5xx responses but we're doing our specific
                     // logging of errors so disable that
                     .on_failure(()),
@@ -150,6 +142,16 @@ mod handler {
                 CompressionLayer::new(),
             ))
             .with_state(Arc::new(app_state))
+    }
+
+    fn make_span(req: &http::Request<axum::body::Body>) -> tracing::Span {
+        let method = req.method();
+        let path = req.uri().path();
+
+        // axum automatically adds this extension.
+        let matched_path = req.extensions().get::<MatchedPath>().map(|matched_path| matched_path.as_str());
+
+        tracing::debug_span!("recv request", %method, %path, matched_path)
     }
 
     pub(crate) async fn metrics_handler() -> Result<(StatusCode, String), AppError> {
