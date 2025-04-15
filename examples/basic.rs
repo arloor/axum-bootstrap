@@ -2,7 +2,9 @@
 
 use std::time::Duration;
 
-use axum_bootstrap::{util::http::init_http_client, TlsParam};
+use axum_bootstrap::TlsParam;
+
+use http::init_http_client;
 
 use clap::Parser;
 
@@ -276,5 +278,20 @@ mod metrics {
     #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
     pub(crate) struct HttpReqLabel {
         pub(crate) path: String,
+    }
+}
+
+mod http {
+    use reqwest::Client;
+
+    use crate::DynError;
+
+    pub async fn init_http_client(http_proxy: &str) -> Result<Client, DynError> {
+        let client_builder = Client::builder().pool_max_idle_per_host(20);
+        if http_proxy.is_empty() {
+            Ok(client_builder.build()?)
+        } else {
+            Ok(client_builder.proxy(reqwest::Proxy::all(http_proxy)?).build()?)
+        }
     }
 }
