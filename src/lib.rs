@@ -316,7 +316,7 @@ impl IntoResponse for AppError {
         // Because `TraceLayer` wraps each request in a span that contains the request
         // method, uri, etc we don't need to include those details here
         tracing::error!(%err, "error");
-        (StatusCode::INTERNAL_SERVER_ERROR, format!("Something went wrong: {}", &err)).into_response()
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("axum-bootstrap error: {}", &err)).into_response()
     }
 }
 
