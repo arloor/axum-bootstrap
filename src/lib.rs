@@ -39,10 +39,10 @@ pub struct TlsParam {
     pub key: String,
 }
 
-pub enum InterceptResult {
+pub enum InterceptResult<T: IntoResponse = AppError> {
     Return(Response),
     Continue(Request<Incoming>),
-    Error(AppError),
+    Error(T),
 }
 
 pub trait ReqInterceptor {
