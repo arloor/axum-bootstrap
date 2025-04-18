@@ -39,21 +39,24 @@ pub struct TlsParam {
     pub key: String,
 }
 
-pub enum InterceptResult<T: IntoResponse = AppError> {
+pub enum InterceptResult<T: IntoResponse> {
     Return(Response),
     Continue(Request<Incoming>),
     Error(T),
 }
 
 pub trait ReqInterceptor {
-    fn intercept(&self, req: Request<Incoming>, ip: SocketAddr) -> impl std::future::Future<Output = InterceptResult> + Send;
+    type Error: IntoResponse + Send + Sync + 'static;
+    fn intercept(&self, req: Request<Incoming>, ip: SocketAddr) -> impl std::future::Future<Output = InterceptResult<Self::Error>> + Send;
 }
 
 #[derive(Clone)]
 pub struct DummyInterceptor;
 
 impl ReqInterceptor for DummyInterceptor {
-    async fn intercept(&self, req: Request<Incoming>, _ip: SocketAddr) -> InterceptResult {
+    type Error = AppError;
+
+    async fn intercept(&self, req: Request<Incoming>, _ip: SocketAddr) -> InterceptResult<Self::Error> {
         InterceptResult::Continue(req)
     }
 }
