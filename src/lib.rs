@@ -45,7 +45,7 @@ pub enum InterceptResult<T: IntoResponse> {
     Error(T),
 }
 
-pub trait ReqInterceptor {
+pub trait ReqInterceptor: Send {
     type Error: IntoResponse + Send + Sync + 'static;
     fn intercept(&self, req: Request<Incoming>, ip: SocketAddr) -> impl std::future::Future<Output = InterceptResult<Self::Error>> + Send;
 }
