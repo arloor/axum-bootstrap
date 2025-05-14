@@ -41,6 +41,7 @@ pub struct TlsParam {
 
 pub enum InterceptResult<T: IntoResponse> {
     Return(Response),
+    Drop,
     Continue(Request<Incoming>),
     Error(T),
 }
@@ -131,21 +132,27 @@ where
 async fn handle<I>(
     request: Request<Incoming>, client_socket_addr: SocketAddr, app: axum::middleware::AddExtension<Router, axum::extract::ConnectInfo<SocketAddr>>,
     interceptor: Option<I>,
-) -> std::result::Result<Response, std::convert::Infallible>
+) -> std::result::Result<Response, std::io::Error>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
 {
     if let Some(interceptor) = interceptor {
         match interceptor.intercept(request, client_socket_addr).await {
-            InterceptResult::Continue(req) => app.oneshot(req).await,
             InterceptResult::Return(res) => Ok(res),
+            InterceptResult::Drop => Err(std::io::Error::new(std::io::ErrorKind::Other, "Request dropped by interceptor")),
+            InterceptResult::Continue(req) => app
+                .oneshot(req)
+                .await
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Interrupted, err)),
             InterceptResult::Error(err) => {
                 let res = err.into_response();
                 Ok(res)
             }
         }
     } else {
-        app.oneshot(request).await
+        app.oneshot(request)
+            .await
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Interrupted, err))
     }
 }
 
