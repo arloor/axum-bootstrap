@@ -20,6 +20,7 @@ use log::{info, warn};
 use tokio::{pin, sync::broadcast, time};
 use tokio_rustls::rustls::ServerConfig;
 use tower::{Service, ServiceExt};
+use util::format::SocketAddrFormat;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60 * 24);
 const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -179,10 +180,35 @@ async fn handle_connection<C, I>(
 
     tokio::spawn(async move {
         if let Err(err) = conn.await {
-            info!("connection error: {}", err);
+            handle_hyper_error(client_socket_addr, err);
         }
         log::debug!("connection dropped: {}", client_socket_addr);
     });
+}
+
+fn handle_hyper_error(client_socket_addr: SocketAddr, http_err: DynError) {
+    use std::error::Error;
+    match http_err.downcast_ref::<hyper::Error>() {
+        Some(hyper_err) => {
+            let level = if hyper_err.is_user() { log::Level::Warn } else { log::Level::Debug };
+            let source = hyper_err.source().unwrap_or(hyper_err);
+            log::log!(
+                level,
+                "[hyper {}]: {:?} from {}",
+                if hyper_err.is_user() { "user" } else { "system" },
+                source,
+                SocketAddrFormat(&client_socket_addr)
+            );
+        }
+        None => match http_err.downcast_ref::<std::io::Error>() {
+            Some(io_err) => {
+                warn!("[hyper io]: [{}] {} from {}", io_err.kind(), io_err, SocketAddrFormat(&client_socket_addr));
+            }
+            None => {
+                warn!("[hyper]: {} from {}", http_err, SocketAddrFormat(&client_socket_addr));
+            }
+        },
+    }
 }
 
 async fn serve_plantext<I>(
