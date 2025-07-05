@@ -159,14 +159,14 @@ mod handler {
     pub(crate) async fn metrics_handler() -> Result<(StatusCode, String), AppError> {
         let mut buffer = String::new();
         if let Err(e) = encode(&mut buffer, &METRIC.prom_registry) {
-            log::error!("Failed to encode metrics: {:?}", e);
-            return Err(AppError::new(io::Error::new(io::ErrorKind::Other, e)));
+            log::error!("Failed to encode metrics: {e:?}");
+            return Err(AppError::new(io::Error::other(e)));
         }
         Ok((StatusCode::OK, buffer))
     }
 
     pub(crate) async fn error_func() -> Result<(StatusCode, String), AppError> {
-        Err(AppError::new(io::Error::new(io::ErrorKind::Other, "MOCK error")))
+        Err(AppError::new(io::Error::other("MOCK error")))
     }
 
     #[debug_handler]
@@ -174,7 +174,7 @@ mod handler {
         State(state): State<Arc<AppState>>, req: Json<DataRequest>,
     ) -> (StatusCode, HeaderMap, Json<Response<Vec<Data>>>) {
         METRIC.req_count.get_or_create(&HttpReqLabel { path: "test".to_string() }).inc();
-        info!("req: {:?}", req);
+        info!("req: {req:?}");
         #[cfg(not(feature = "mysql"))]
         return (StatusCode::INTERNAL_SERVER_ERROR, some_headers(), Json(Response::error("mysql not enabled".to_string())));
         #[cfg(feature = "mysql")]

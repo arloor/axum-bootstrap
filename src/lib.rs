@@ -140,7 +140,7 @@ where
     if let Some(interceptor) = interceptor {
         match interceptor.intercept(request, client_socket_addr).await {
             InterceptResult::Return(res) => Ok(res),
-            InterceptResult::Drop => Err(std::io::Error::new(std::io::ErrorKind::Other, "Request dropped by interceptor")),
+            InterceptResult::Drop => Err(std::io::Error::other("Request dropped by interceptor")),
             InterceptResult::Continue(req) => app
                 .oneshot(req)
                 .await
@@ -182,7 +182,7 @@ async fn handle_connection<C, I>(
         if let Err(err) = conn.await {
             handle_hyper_error(client_socket_addr, err);
         }
-        log::debug!("connection dropped: {}", client_socket_addr);
+        log::debug!("connection dropped: {client_socket_addr}");
     });
 }
 
@@ -233,7 +233,7 @@ where
                     Ok((conn, client_socket_addr)) => {
                         handle_connection(conn,client_socket_addr, app.clone(), server.clone(),interceptor.clone(), &graceful, timeout).await;}
                     Err(e) => {
-                        warn!("accept error:{}", e);
+                        warn!("accept error:{e}");
                     }
                 }
             }
@@ -261,13 +261,13 @@ where
     let tx_clone = tx.clone();
     let tls_param_clone = tls_param.clone();
     tokio::spawn(async move {
-        info!("update tls config every {:?}", REFRESH_INTERVAL);
+        info!("update tls config every {REFRESH_INTERVAL:?}");
         loop {
             time::sleep(REFRESH_INTERVAL).await;
             if let Ok(new_acceptor) = tls_config(&tls_param_clone.key, &tls_param_clone.cert) {
                 info!("update tls config");
                 if let Err(e) = tx.send(new_acceptor) {
-                    warn!("send tls config error:{}", e);
+                    warn!("send tls config error:{e}");
                 }
             }
         }
@@ -295,7 +295,7 @@ where
                     Ok((conn, client_socket_addr)) => {
                         handle_connection(conn,client_socket_addr, app.clone(), server.clone(),interceptor.clone(), &graceful, timeout).await;}
                     Err(e) => {
-                        warn!("accept error:{}", e);
+                        warn!("accept error:{e}");
                     }
                 }
             }
