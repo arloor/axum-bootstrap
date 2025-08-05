@@ -1,27 +1,31 @@
-use anyhow::{Context, Result};
-use bytes::Bytes;
-use h3::{
-    ext::Protocol,
-    quic::{self},
-    server::Connection,
-};
-use h3_quinn::quinn::{self, crypto::rustls::QuicServerConfig};
-use h3_webtransport::server::{self, WebTransportSession};
-use http::Method;
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+
+use bytes::{Bytes, BytesMut};
+use http::StatusCode;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use structopt::StructOpt;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::pin;
+use tokio::{fs::File, io::AsyncReadExt};
 use tracing::{error, info, trace_span};
+
+use h3::server::RequestResolver;
+use h3_quinn::quinn::{self, crypto::rustls::QuicServerConfig};
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "server")]
 struct Opt {
     #[structopt(
+        name = "dir",
         short,
         long,
-        default_value = "127.0.0.1:4433",
+        help = "Root directory of the files to serve. \
+                If omitted, server will respond OK."
+    )]
+    pub root: Option<PathBuf>,
+
+    #[structopt(
+        short,
+        long,
+        default_value = "[::1]:4433",
         help = "What address:port to listen for new connections"
     )]
     pub listen: SocketAddr,
@@ -35,7 +39,7 @@ pub struct Certs {
     #[structopt(
         long,
         short,
-        default_value = "examples/localhost.crt",
+        default_value = "examples/server.cert",
         help = "Certificate for TLS. If present, `--key` is mandatory."
     )]
     pub cert: PathBuf,
@@ -43,35 +47,38 @@ pub struct Certs {
     #[structopt(
         long,
         short,
-        default_value = "examples/localhost.key",
+        default_value = "examples/server.key",
         help = "Private key for the certificate."
     )]
     pub key: PathBuf,
 }
 
+static ALPN: &[u8] = b"h3";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 0. Setup tracing
-    #[cfg(not(feature = "tree"))]
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_span_events(tracing_subscriber::fmt::format::FmtSpan::FULL)
         .with_writer(std::io::stderr)
-        .init();
-
-    #[cfg(feature = "tree")]
-    use tracing_subscriber::prelude::*;
-    #[cfg(feature = "tree")]
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::from_default_env())
-        .with(tracing_tree::HierarchicalLayer::new(4).with_bracketed_fields(true))
+        .with_max_level(tracing::Level::INFO)
         .init();
 
     // process cli arguments
 
     let opt = Opt::from_args();
 
-    tracing::info!("Opt: {opt:#?}");
+    let root = if let Some(root) = opt.root {
+        if !root.is_dir() {
+            return Err(format!("{}: is not a readable directory", root.display()).into());
+        } else {
+            info!("serving {}", root.display());
+            Arc::new(Some(root))
+        }
+    } else {
+        Arc::new(None)
+    };
+
     let Certs { cert, key } = opt.certs;
 
     // create quinn server endpoint and bind UDP socket
@@ -85,57 +92,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_single_cert(vec![cert], key)?;
 
     tls_config.max_early_data_size = u32::MAX;
-    let alpn: Vec<Vec<u8>> = vec![
-        b"h3".to_vec(),
-        b"h3-32".to_vec(),
-        b"h3-31".to_vec(),
-        b"h3-30".to_vec(),
-        b"h3-29".to_vec(),
-    ];
-    tls_config.alpn_protocols = alpn;
+    tls_config.alpn_protocols = vec![ALPN.into()];
 
-    let mut server_config =
+    let server_config =
         quinn::ServerConfig::with_crypto(Arc::new(QuicServerConfig::try_from(tls_config)?));
-    let mut transport_config = quinn::TransportConfig::default();
-    transport_config.keep_alive_interval(Some(Duration::from_secs(2)));
-    server_config.transport = Arc::new(transport_config);
     let endpoint = quinn::Endpoint::server(server_config, opt.listen)?;
 
     info!("listening on {}", opt.listen);
 
-    // 2. Accept new quic connections and spawn a new task to handle them
+    // handle incoming connections and requests
+
     while let Some(new_conn) = endpoint.accept().await {
         trace_span!("New connection being attempted");
+
+        let root = root.clone();
 
         tokio::spawn(async move {
             match new_conn.await {
                 Ok(conn) => {
-                    info!("new http3 established");
-                    let h3_conn = h3::server::builder()
-                        .enable_webtransport(true)
-                        .enable_extended_connect(true)
-                        .enable_datagram(true)
-                        .max_webtransport_sessions(1)
-                        .send_grease(true)
-                        .build(h3_quinn::Connection::new(conn))
+                    info!("new connection established");
+
+                    let mut h3_conn = h3::server::Connection::new(h3_quinn::Connection::new(conn))
                         .await
                         .unwrap();
 
-                    // tracing::info!("Establishing WebTransport session");
-                    // // 3. TODO: Conditionally, if the client indicated that this is a webtransport session, we should accept it here, else use regular h3.
-                    // // if this is a webtransport session, then h3 needs to stop handing the datagrams, bidirectional streams, and unidirectional streams and give them
-                    // // to the webtransport session.
+                    loop {
+                        match h3_conn.accept().await {
+                            Ok(Some(resolver)) => {
+                                let root = root.clone();
 
-                    if let Err(err) = handle_connection(h3_conn).await {
-                        tracing::error!("Failed to handle connection: {err:?}");
+                                tokio::spawn(async {
+                                    if let Err(e) = handle_request(resolver, root).await {
+                                        error!("handling request failed: {}", e);
+                                    }
+                                });
+                            }
+                            // indicating that the remote sent a goaway frame
+                            // all requests have been processed
+                            Ok(None) => {
+                                break;
+                            }
+                            Err(err) => {
+                                error!("error on accept {}", err);
+                                break;
+                            }
+                        }
                     }
-
-                    // let mut session: WebTransportSession<_, Bytes> =
-                    //     WebTransportSession::accept(h3_conn).await.unwrap();
-                    // tracing::info!("Finished establishing webtransport session");
-                    // // 4. Get datagrams, bidirectional streams, and unidirectional streams and wait for client requests here.
-                    // // h3_conn needs to hand over the datagrams, bidirectional streams, and unidirectional streams to the webtransport session.
-                    // let result = handle.await;
                 }
                 Err(err) => {
                     error!("accepting connection failed: {:?}", err);
@@ -151,162 +153,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn handle_connection(mut conn: Connection<h3_quinn::Connection, Bytes>) -> Result<()> {
-    // 3. TODO: Conditionally, if the client indicated that this is a webtransport session, we should accept it here, else use regular h3.
-    // if this is a webtransport session, then h3 needs to stop handing the datagrams, bidirectional streams, and unidirectional streams and give them
-    // to the webtransport session.
+async fn handle_request<C>(
+    resolver: RequestResolver<C, Bytes>,
+    serve_root: Arc<Option<PathBuf>>,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    C: h3::quic::Connection<Bytes>,
+{
+    let (req, mut stream) = resolver.resolve_request().await?;
 
-    loop {
-        match conn.accept().await {
-            Ok(Some(resolver)) => {
-                // TODO: resolve request in a different task to not block the accept loop
-                let (req, stream) = match resolver.resolve_request().await {
-                    Ok(request) => request,
-                    Err(err) => {
-                        error!("error resolving request: {err:?}");
-                        continue;
-                    }
-                };
-                info!("new request: {:#?}", req);
-
-                let ext = req.extensions();
-                match req.method() {
-                    &Method::CONNECT if ext.get::<Protocol>() == Some(&Protocol::WEB_TRANSPORT) => {
-                        tracing::info!("Peer wants to initiate a webtransport session");
-
-                        tracing::info!("Handing over connection to WebTransport");
-                        let session = WebTransportSession::accept(req, stream, conn).await?;
-                        tracing::info!("Established webtransport session");
-                        // 4. Get datagrams, bidirectional streams, and unidirectional streams and wait for client requests here.
-                        // h3_conn needs to hand over the datagrams, bidirectional streams, and unidirectional streams to the webtransport session.
-                        handle_session_and_echo_all_inbound_messages(session).await?;
-
-                        return Ok(());
-                    }
-                    _ => {
-                        tracing::info!(?req, "Received request");
-                    }
+    let (status, to_serve) = match serve_root.as_deref() {
+        None => (StatusCode::OK, None),
+        Some(_) if req.uri().path().contains("..") => (StatusCode::NOT_FOUND, None),
+        Some(root) => {
+            let to_serve = root.join(req.uri().path().strip_prefix('/').unwrap_or(""));
+            match File::open(&to_serve).await {
+                Ok(file) => (StatusCode::OK, Some(file)),
+                Err(e) => {
+                    error!("failed to open: \"{}\": {}", to_serve.to_string_lossy(), e);
+                    (StatusCode::NOT_FOUND, None)
                 }
             }
-            // indicating no more streams to be received
-            Ok(None) => {
-                break;
-            }
-            Err(err) => {
-                error!("Connection errored with {}", err);
-                break;
-            }
-        }
-    }
-    Ok(())
-}
-
-macro_rules! log_result {
-    ($expr:expr) => {
-        if let Err(err) = $expr {
-            tracing::error!("{err:?}");
         }
     };
-}
 
-async fn echo_stream<T, R>(send: T, recv: R) -> anyhow::Result<()>
-where
-    T: AsyncWrite,
-    R: AsyncRead,
-{
-    pin!(send);
-    pin!(recv);
+    let resp = http::Response::builder().status(status).body(()).unwrap();
 
-    tracing::info!("Got stream");
-    let mut buf = Vec::new();
-    recv.read_to_end(&mut buf).await?;
-
-    let message = Bytes::from(buf);
-
-    send_chunked(send, message).await?;
-
-    Ok(())
-}
-
-// Used to test that all chunks arrive properly as it is easy to write an impl which only reads and
-// writes the first chunk.
-async fn send_chunked(mut send: impl AsyncWrite + Unpin, data: Bytes) -> anyhow::Result<()> {
-    for chunk in data.chunks(4) {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        tracing::info!("Sending {chunk:?}");
-        send.write_all(chunk).await?;
-    }
-
-    Ok(())
-}
-
-async fn open_bidi_test<S>(mut stream: S) -> anyhow::Result<()>
-where
-    S: Unpin + AsyncRead + AsyncWrite,
-{
-    tracing::info!("Opening bidirectional stream");
-
-    stream
-        .write_all(b"Hello from a server initiated bidi stream")
-        .await
-        .context("Failed to respond")?;
-
-    let mut resp = Vec::new();
-    stream.shutdown().await?;
-    stream.read_to_end(&mut resp).await?;
-
-    tracing::info!("Got response from client: {resp:?}");
-
-    Ok(())
-}
-
-/// This method will echo all inbound datagrams, unidirectional and bidirectional streams.
-async fn handle_session_and_echo_all_inbound_messages(
-    session: WebTransportSession<h3_quinn::Connection, Bytes>,
-) -> anyhow::Result<()> {
-    let session_id = session.session_id();
-
-    // This will open a bidirectional stream and send a message to the client right after connecting!
-    let stream = session.open_bi(session_id).await?;
-
-    tokio::spawn(async move { log_result!(open_bidi_test(stream).await) });
-
-    let mut datagram_reader = session.datagram_reader();
-    let mut datagram_sender = session.datagram_sender();
-
-    loop {
-        tokio::select! {
-            datagram = datagram_reader.read_datagram() => {
-                let datagram = match datagram {
-                    Ok(datagram) => datagram,
-                    Err(err) => {
-                        tracing::error!("Failed to read datagram: {err:?}");
-                        break;
-                    }
-                };
-                tracing::info!("Received datagram: {datagram:?}");
-                let datagram = datagram.into_payload();
-                datagram_sender.send_datagram(datagram)?;
-            }
-            uni_stream = session.accept_uni() => {
-                let (id, stream) = uni_stream?.unwrap();
-
-                let send = session.open_uni(id).await?;
-                tokio::spawn( async move { log_result!(echo_stream(send, stream).await); });
-            }
-            stream = session.accept_bi() => {
-                if let Some(server::AcceptedBi::BidiStream(_, stream)) = stream? {
-                    let (send, recv) = quic::BidiStream::split(stream);
-                    tokio::spawn( async move { log_result!(echo_stream(send, recv).await); });
-                }
-            }
-            else => {
-                break
-            }
+    match stream.send_response(resp).await {
+        Ok(_) => {
+            info!("successfully respond to connection");
+        }
+        Err(err) => {
+            error!("unable to send response to connection peer: {:?}", err);
         }
     }
 
-    tracing::info!("Finished handling session");
+    if let Some(mut file) = to_serve {
+        loop {
+            let mut buf = BytesMut::with_capacity(4096 * 10);
+            if file.read_buf(&mut buf).await? == 0 {
+                break;
+            }
+            stream.send_data(buf.freeze()).await?;
+        }
+    }
 
-    Ok(())
+    Ok(stream.finish().await?)
 }
