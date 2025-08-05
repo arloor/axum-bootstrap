@@ -248,6 +248,7 @@ dependencies = [
  "h3",
  "h3-quinn",
  "http",
+ "http-body",
  "hyper",
  "hyper-util",
  "log",

@@ -15,7 +15,10 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use hyper::{StatusCode, body::Incoming};
+use hyper::{
+    StatusCode,
+    body::{Body, Incoming},
+};
 use hyper_util::rt::TokioExecutor;
 use log::{error, info, warn};
 use quinn::crypto::rustls::QuicServerConfig;
@@ -210,12 +213,13 @@ async fn serve_http3(port: u16, tls_param: &TlsParam) -> Result<(), DynError> {
     Ok(())
 }
 
-async fn handle<I>(
-    request: Request<Incoming>, client_socket_addr: SocketAddr, app: axum::middleware::AddExtension<Router, axum::extract::ConnectInfo<SocketAddr>>,
+async fn handle<I, T>(
+    request: Request<T>, client_socket_addr: SocketAddr, app: axum::middleware::AddExtension<Router, axum::extract::ConnectInfo<SocketAddr>>,
     interceptor: Option<I>,
 ) -> std::result::Result<Response, std::io::Error>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
+    T: http_body::Body + Send + Sync + 'static,
 {
     if let Some(interceptor) = interceptor {
         match interceptor.intercept(request, client_socket_addr).await {
@@ -237,12 +241,13 @@ where
     }
 }
 
-async fn handle_connection<C, I>(
+async fn handle_connection<C, I, T>(
     conn: C, client_socket_addr: std::net::SocketAddr, app: Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>,
     interceptor: Option<I>, graceful: &hyper_util::server::graceful::GracefulShutdown, timeout: Duration,
 ) where
     C: tokio::io::AsyncRead + tokio::io::AsyncWrite + 'static + Send + Sync,
     I: ReqInterceptor + Clone + Send + Sync + 'static,
+    T: http_body::Body + Send + Sync + 'static,
 {
     let timeout_io = Box::pin(io::TimeoutIO::new(conn, timeout));
     use hyper::Request;
@@ -251,9 +256,7 @@ async fn handle_connection<C, I>(
     let mut app = app.into_make_service_with_connect_info::<SocketAddr>();
     let app: axum::middleware::AddExtension<Router, axum::extract::ConnectInfo<SocketAddr>> = unwrap_infallible(app.call(client_socket_addr).await);
     // https://github.com/tokio-rs/axum/blob/main/examples/serve-with-hyper/src/main.rs#L81
-    let hyper_service = hyper::service::service_fn(move |request: Request<hyper::body::Incoming>| {
-        handle(request, client_socket_addr, app.clone(), interceptor.clone())
-    });
+    let hyper_service = hyper::service::service_fn(move |request: Request<T>| handle(request, client_socket_addr, app.clone(), interceptor.clone()));
 
     let conn = server.serve_connection_with_upgrades(stream, hyper_service);
     let conn = graceful.watch(conn.into_owned());
