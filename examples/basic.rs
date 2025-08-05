@@ -92,10 +92,10 @@ mod handler {
     use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 
     use axum::{
+        Json, Router,
         extract::{ConnectInfo, MatchedPath, Request, State},
         http::{self, HeaderValue},
         routing::get,
-        Json, Router,
     };
     use axum_macros::debug_handler;
     use chrono::NaiveDateTime;
@@ -106,11 +106,20 @@ mod handler {
     use sqlx::FromRow;
     use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
-    use axum_bootstrap::{util::json::StupidValue, AppError};
+    use axum_bootstrap::{AppError, layers::AltSvcLayer, util::json::StupidValue};
     use tokio::time::sleep;
     use tower_http::{compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 
     use crate::metrics::{HttpReqLabel, METRIC};
+
+    pub(crate) async fn root_handler(ConnectInfo(addr): ConnectInfo<SocketAddr>) -> String {
+        format!("{addr}")
+    }
+
+    pub(crate) async fn time_handler() -> &'static str {
+        sleep(Duration::from_secs(20)).await;
+        "OK"
+    }
 
     pub(crate) struct AppState {
         #[cfg(feature = "mysql")]
@@ -121,14 +130,8 @@ mod handler {
     pub(crate) fn build_router(app_state: AppState) -> Router {
         // build our application with a route
         Router::new()
-            .route("/", get(|ConnectInfo(addr): ConnectInfo<SocketAddr>| async move { (StatusCode::OK, format!("{addr}")) }))
-            .route(
-                "/time",
-                get(|| async {
-                    sleep(Duration::from_secs(20)).await;
-                    (StatusCode::OK, "OK")
-                }),
-            )
+            .route("/", get(root_handler))
+            .route("/time", get(time_handler))
             .route("/metrics", get(metrics_handler))
             .route("/error", get(error_func))
             .route("/data", get(data_handler).post(data_handler))
@@ -142,6 +145,7 @@ mod handler {
                 CorsLayer::permissive(),
                 TimeoutLayer::new(Duration::from_secs(30)),
                 CompressionLayer::new(),
+                AltSvcLayer::new(crate::PARAM.port, crate::PARAM.tls),
             ))
             .with_state(Arc::new(app_state))
     }
@@ -156,13 +160,14 @@ mod handler {
         tracing::debug_span!("recv request", %method, %path, matched_path)
     }
 
-    pub(crate) async fn metrics_handler() -> Result<(StatusCode, String), AppError> {
+    pub(crate) async fn metrics_handler() -> Result<String, AppError> {
         let mut buffer = String::new();
         if let Err(e) = encode(&mut buffer, &METRIC.prom_registry) {
             log::error!("Failed to encode metrics: {e:?}");
             return Err(AppError::new(io::Error::other(e)));
         }
-        Ok((StatusCode::OK, buffer))
+
+        Ok(buffer)
     }
 
     pub(crate) async fn error_func() -> Result<(StatusCode, String), AppError> {
@@ -172,11 +177,11 @@ mod handler {
     #[debug_handler]
     pub(crate) async fn data_handler(
         State(state): State<Arc<AppState>>, req: Json<DataRequest>,
-    ) -> (StatusCode, HeaderMap, Json<Response<Vec<Data>>>) {
+    ) -> (StatusCode, Json<Response<Vec<Data>>>) {
         METRIC.req_count.get_or_create(&HttpReqLabel { path: "test".to_string() }).inc();
         info!("req: {req:?}");
         #[cfg(not(feature = "mysql"))]
-        return (StatusCode::INTERNAL_SERVER_ERROR, some_headers(), Json(Response::error("mysql not enabled".to_string())));
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(Response::error("mysql not enabled".to_string())));
         #[cfg(feature = "mysql")]
         {
             use std::borrow::Borrow;
@@ -187,7 +192,6 @@ mod handler {
             {
                 Ok(row) => (
                     StatusCode::OK,
-                    some_headers(),
                     Json(Response::success(vec![Data {
                         now_local: row.now_local,
                         now_naive: row.now_naive,
@@ -196,7 +200,7 @@ mod handler {
                 ),
                 Err(e) => {
                     log::warn!("query now failed: {:?}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, some_headers(), Json(Response::error(format!("query now failed: {:?}", e))))
+                    (StatusCode::INTERNAL_SERVER_ERROR, Json(Response::error(format!("query now failed: {:?}", e))))
                 }
             }
         }
@@ -247,11 +251,6 @@ mod handler {
         }
     }
 
-    pub fn some_headers() -> HeaderMap {
-        let mut headers = HeaderMap::new();
-        headers.insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
-        headers
-    }
 }
 
 mod metrics {

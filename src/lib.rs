@@ -1,6 +1,7 @@
 use std::{convert::Infallible, fmt::Display, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 pub mod init_log;
+pub mod layers;
 pub mod util;
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 use crate::util::{
