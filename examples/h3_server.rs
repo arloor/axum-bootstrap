@@ -1,5 +1,6 @@
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{io, net::SocketAddr, path::PathBuf, sync::Arc};
 
+use axum_bootstrap::util;
 use bytes::{Bytes, BytesMut};
 use http::StatusCode;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -22,12 +23,7 @@ struct Opt {
     )]
     pub root: Option<PathBuf>,
 
-    #[structopt(
-        short,
-        long,
-        default_value = "[::1]:4433",
-        help = "What address:port to listen for new connections"
-    )]
+    #[structopt(short, long, default_value = "[::1]:4433", help = "What address:port to listen for new connections")]
     pub listen: SocketAddr,
 
     #[structopt(flatten)]
@@ -36,21 +32,11 @@ struct Opt {
 
 #[derive(StructOpt, Debug)]
 pub struct Certs {
-    #[structopt(
-        long,
-        short,
-        default_value = "examples/server.cert",
-        help = "Certificate for TLS. If present, `--key` is mandatory."
-    )]
-    pub cert: PathBuf,
+    #[structopt(long, short, default_value = "cert.pem", help = "Certificate for TLS. If present, `--key` is mandatory.")]
+    pub cert: String,
 
-    #[structopt(
-        long,
-        short,
-        default_value = "examples/server.key",
-        help = "Private key for the certificate."
-    )]
-    pub key: PathBuf,
+    #[structopt(long, short, default_value = "privkey.pem", help = "Private key for the certificate.")]
+    pub key: String,
 }
 
 static ALPN: &[u8] = b"h3";
@@ -83,19 +69,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // create quinn server endpoint and bind UDP socket
 
-    // both cert and key must be DER-encoded
-    let cert = CertificateDer::from(std::fs::read(cert)?);
-    let key = PrivateKeyDer::try_from(std::fs::read(key)?)?;
+    // // both cert and key must be DER-encoded
+    // let cert = CertificateDer::from(std::fs::read(cert)?);
+    // let key = PrivateKeyDer::try_from(std::fs::read(key)?)?;
 
-    let mut tls_config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(vec![cert], key)?;
-
+    let mut tls_config = util::tls::tls_config(&key, &cert).map_err(io::Error::other)?;
     tls_config.max_early_data_size = u32::MAX;
     tls_config.alpn_protocols = vec![ALPN.into()];
 
-    let server_config =
-        quinn::ServerConfig::with_crypto(Arc::new(QuicServerConfig::try_from(tls_config)?));
+    let server_config = quinn::ServerConfig::with_crypto(Arc::new(QuicServerConfig::try_from(tls_config)?));
     let endpoint = quinn::Endpoint::server(server_config, opt.listen)?;
 
     info!("listening on {}", opt.listen);
@@ -112,9 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(conn) => {
                     info!("new connection established");
 
-                    let mut h3_conn = h3::server::Connection::new(h3_quinn::Connection::new(conn))
-                        .await
-                        .unwrap();
+                    let mut h3_conn = h3::server::Connection::new(h3_quinn::Connection::new(conn)).await.unwrap();
 
                     loop {
                         match h3_conn.accept().await {
@@ -153,10 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn handle_request<C>(
-    resolver: RequestResolver<C, Bytes>,
-    serve_root: Arc<Option<PathBuf>>,
-) -> Result<(), Box<dyn std::error::Error>>
+async fn handle_request<C>(resolver: RequestResolver<C, Bytes>, serve_root: Arc<Option<PathBuf>>) -> Result<(), Box<dyn std::error::Error>>
 where
     C: h3::quic::Connection<Bytes>,
 {

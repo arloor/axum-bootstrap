@@ -21,6 +21,10 @@ use_flexi_logger = ["dep:flexi_logger"]
 name = "basic"
 path = "examples/basic.rs"
 
+[[example]]
+name = "h3"
+path = "examples/h3_server.rs"
+
 [dependencies]
 # tls需要
 tokio-rustls = { version = "0.26", features = [

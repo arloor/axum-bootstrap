@@ -266,14 +266,14 @@ where
             time::sleep(REFRESH_INTERVAL).await;
             if let Ok(new_acceptor) = tls_config(&tls_param_clone.key, &tls_param_clone.cert) {
                 info!("update tls config");
-                if let Err(e) = tx.send(new_acceptor) {
+                if let Err(e) = tx.send(Arc::new(new_acceptor)) {
                     warn!("send tls config error:{e}");
                 }
             }
         }
     });
     let mut rx = tx_clone.subscribe();
-    let mut acceptor: TlsAcceptor = TlsAcceptor::new(tls_config(&tls_param.key, &tls_param.cert)?, create_dual_stack_listener(port).await?);
+    let mut acceptor: TlsAcceptor = TlsAcceptor::new(Arc::new(tls_config(&tls_param.key, &tls_param.cert)?), create_dual_stack_listener(port).await?);
     let signal = handle_signal();
     pin!(signal);
     loop {

@@ -1,7 +1,7 @@
 use std::{fs::File, io, net::SocketAddr, sync::Arc};
 
 use crate::DynError;
-pub fn tls_config(key: &String, cert: &String) -> Result<Arc<ServerConfig>, DynError> {
+pub fn tls_config(key: &String, cert: &String) -> Result<ServerConfig, DynError> {
     use std::io::{self, BufReader};
     let key_file = File::open(key).map_err(|_| "open private key failed")?;
     let cert_file = File::open(cert).map_err(|_| "open cert failed")?;
@@ -13,12 +13,12 @@ pub fn tls_config(key: &String, cert: &String) -> Result<Arc<ServerConfig>, DynE
         b"h2".to_vec(),       // http2
         b"http/1.1".to_vec(), // http1.1
     ];
-    Ok(Arc::new(config))
+    Ok(config)
 }
 
 #[allow(dead_code)]
 pub fn rust_tls_acceptor(key: &String, cert: &String) -> Result<tokio_rustls::TlsAcceptor, DynError> {
-    Ok(tls_config(key, cert)?.into())
+    Ok(Arc::new(tls_config(key, cert)?).into())
 }
 
 use core::task::{Context, Poll};
