@@ -13,6 +13,7 @@ readme = "README.md"
 [features]
 default = ["use_tracing_subscriber"]
 mysql = []
+http3 = ["dep:h3", "dep:h3-quinn", "dep:quinn"]
 use_tracing_subscriber = ["dep:tracing-subscriber", "dep:time"]
 use_env_logger = ["dep:env_logger"]
 use_flexi_logger = ["dep:flexi_logger"]
@@ -24,6 +25,8 @@ path = "examples/basic.rs"
 [[example]]
 name = "h3"
 path = "examples/h3_server.rs"
+required-features = ["http3"]
+
 
 [dependencies]
 # tls需要
@@ -70,9 +73,16 @@ serde_json = "1"
 
 futures-util = "0.3"
 pin-project-lite = "0.2"
-h3 = "0.0.8"
-h3-quinn = "0.0.10"
-h3-webtransport = "0.1.2"
+
+
+h3 = { version = "0.0.8", optional = true }
+h3-quinn = { version = "0.0.10", optional = true }
+# h3-webtransport = "0.1.2"
+quinn = { version = "0.11", default-features = false, optional = true, features = [
+    "runtime-tokio",
+    "rustls",
+    "aws-lc-rs",
+] }
 
 
 [dev-dependencies]
@@ -107,14 +117,9 @@ reqwest = { version = "0.12", default-features = false, features = [
 # h3
 bytes = "1"
 http = "1"
-quinn = { version = "0.11", default-features = false, features = [
-    "runtime-tokio",
-    "rustls",
-    "ring",
-] }
-rustls = { version = "0.23", default-features = false, features = [
-    "logging",
-    "ring",
-    "std",
-] }
+# rustls = { version = "0.23", default-features = false, features = [
+#     "logging",
+#     "ring",
+#     "std",
+# ] }
 structopt = "0.3"
