@@ -37,4 +37,5 @@ docker.io/library/mysql:9.1
 
 等待hyper支持HTTP3
 
-[https://github.com/hyperium/hyper/pull/3925](https://github.com/hyperium/hyper/pull/3925)
+- [https://github.com/hyperium/hyper/pull/3925](https://github.com/hyperium/hyper/pull/3925)
+- [https://github.com/tokio-rs/axum/issues/1096](https://github.com/tokio-rs/axum/issues/1096)
