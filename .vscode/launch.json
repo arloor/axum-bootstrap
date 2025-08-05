@@ -12,13 +12,14 @@
                 "args": [
                     "build",
                     "--example=basic",
+                    "--features=http3",
                 ],
                 "filter": {
                     "name": "basic",
                     "kind": "example"
                 }
             },
-            "args": [],
+            "args": ["--tls"],
             "cwd": "${workspaceFolder}"
         },
     ]

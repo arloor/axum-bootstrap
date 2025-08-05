@@ -13,7 +13,7 @@ readme = "README.md"
 [features]
 default = ["use_tracing_subscriber", "http3"]
 mysql = []
-http3 = ["dep:h3", "dep:h3-quinn", "dep:quinn"]
+http3 = ["dep:h3", "dep:h3-quinn", "dep:quinn", "dep:bytes"]
 use_tracing_subscriber = ["dep:tracing-subscriber", "dep:time"]
 use_env_logger = ["dep:env_logger"]
 use_flexi_logger = ["dep:flexi_logger"]
@@ -21,6 +21,7 @@ use_flexi_logger = ["dep:flexi_logger"]
 [[example]]
 name = "basic"
 path = "examples/basic.rs"
+required-features = ["http3"]
 
 [[example]]
 name = "h3"
@@ -83,6 +84,8 @@ quinn = { version = "0.11", default-features = false, optional = true, features 
     "rustls",
     "aws-lc-rs",
 ] }
+bytes = { version = "1", optional = true }
+http = "1"
 
 
 [dev-dependencies]
@@ -115,8 +118,8 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 
 # h3
-bytes = "1"
-http = "1"
+
+
 # rustls = { version = "0.23", default-features = false, features = [
 #     "logging",
 #     "ring",

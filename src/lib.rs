@@ -1,25 +1,27 @@
-use std::{convert::Infallible, fmt::Display, net::SocketAddr, sync::Arc, time::Duration};
+use std::{convert::Infallible, fmt::Display, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 pub mod init_log;
 pub mod util;
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 use crate::util::{
     io::{self, create_dual_stack_listener},
-    tls::{tls_config, TlsAcceptor},
+    tls::{TlsAcceptor, tls_config},
 };
 use anyhow::anyhow;
 use axum::{
+    Router,
     extract::Request,
     response::{IntoResponse, Response},
-    Router,
 };
 
-use hyper::{body::Incoming, StatusCode};
+use hyper::{StatusCode, body::Incoming};
 use hyper_util::rt::TokioExecutor;
-use log::{info, warn};
+use log::{error, info, warn};
+use quinn::crypto::rustls::QuicServerConfig;
 use tokio::{pin, sync::broadcast, time};
 use tokio_rustls::rustls::ServerConfig;
 use tower::{Service, ServiceExt};
+use tracing::trace_span;
 use util::format::SocketAddrFormat;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60 * 60 * 24);
@@ -107,6 +109,18 @@ where
             Some(config) => config.tls,
             None => false,
         };
+        if let Some(tls_param) = &self.tls_param
+            && cfg!(feature = "http3")
+            && tls_param.tls
+        {
+            let port = self.port;
+            let tls_param = tls_param.clone();
+            tokio::spawn(async move {
+                if let Err(e) = serve_http3(port, &tls_param).await {
+                    error!("HTTP/3 server failed: {e}");
+                }
+            });
+        }
         log::info!("listening on port {}, use_tls: {}", self.port, use_tls);
         let server: hyper_util::server::conn::auto::Builder<TokioExecutor> = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
         let graceful: hyper_util::server::graceful::GracefulShutdown = hyper_util::server::graceful::GracefulShutdown::new();
@@ -127,15 +141,72 @@ where
             false => serve_plantext(&self.router, server, graceful, self.port, self.interceptor.clone(), self.idle_timeout).await?,
         }
 
-        if let Some(tls_param) = &self.tls_param
-            && cfg!(feature = "http3")
-            && tls_param.tls
-        {
-            info!("HTTP/3 is enabled with TLS");
-        }
-
         Ok(())
     }
+}
+
+async fn serve_http3(port: u16, tls_param: &TlsParam) -> Result<(), DynError> {
+    info!("HTTP/3 is enabled with TLS");
+    let mut tls_config = tls_config(&tls_param.key, &tls_param.cert)?;
+    tls_config.max_early_data_size = u32::MAX;
+    tls_config.alpn_protocols = vec![b"h3".into()];
+
+    let server_config = quinn::ServerConfig::with_crypto(Arc::new(QuicServerConfig::try_from(tls_config)?));
+    let bind_adddr = SocketAddr::from(([0, 0, 0, 0, 0, 0, 0, 0], port));
+    let endpoint = quinn::Endpoint::server(server_config, bind_adddr)?;
+
+    info!("listening on {bind_adddr}");
+
+    // handle incoming connections and requests
+
+    while let Some(new_conn) = endpoint.accept().await {
+        trace_span!("New connection being attempted");
+
+        let root = Some(PathBuf::from(".")); // Assuming root is defined somewhere in your code
+
+        let root = Arc::new(root);
+
+        tokio::spawn(async move {
+            match new_conn.await {
+                Ok(conn) => {
+                    info!("new connection established");
+
+                    let mut h3_conn = h3::server::Connection::new(h3_quinn::Connection::new(conn)).await.unwrap();
+
+                    loop {
+                        match h3_conn.accept().await {
+                            Ok(Some(resolver)) => {
+                                let root = root.clone();
+
+                                tokio::spawn(async {
+                                    if let Err(e) = handle_request(resolver, root).await {
+                                        error!("handling request failed: {e}");
+                                    }
+                                });
+                            }
+                            // indicating that the remote sent a goaway frame
+                            // all requests have been processed
+                            Ok(None) => {
+                                break;
+                            }
+                            Err(err) => {
+                                error!("error on accept {err}");
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    error!("accepting connection failed: {err:?}");
+                }
+            }
+        });
+    }
+
+    // shut down gracefully
+    // wait for connections to be closed before exiting
+    endpoint.wait_idle().await;
+    Ok(())
 }
 
 async fn handle<I>(
@@ -323,7 +394,7 @@ where
 #[cfg(unix)]
 async fn handle_signal() -> Result<(), DynError> {
     use log::info;
-    use tokio::signal::unix::{signal, SignalKind};
+    use tokio::signal::unix::{SignalKind, signal};
     let mut terminate_signal = signal(SignalKind::terminate())?;
     tokio::select! {
         _ = terminate_signal.recv() => {
@@ -386,4 +457,54 @@ fn unwrap_infallible<T>(result: Result<T, Infallible>) -> T {
         Ok(value) => value,
         Err(err) => match err {},
     }
+}
+
+#[cfg(feature = "http3")]
+async fn handle_request<C>(
+    resolver: h3::server::RequestResolver<C, bytes::Bytes>, serve_root: Arc<Option<PathBuf>>,
+) -> Result<(), Box<dyn std::error::Error>>
+where
+    C: h3::quic::Connection<bytes::Bytes>,
+{
+    let (req, mut stream) = resolver.resolve_request().await?;
+
+    let (status, to_serve) = match serve_root.as_deref() {
+        None => (StatusCode::OK, None),
+        Some(_) if req.uri().path().contains("..") => (StatusCode::NOT_FOUND, None),
+        Some(root) => {
+            let to_serve = root.join(req.uri().path().strip_prefix('/').unwrap_or(""));
+            match tokio::fs::File::open(&to_serve).await {
+                Ok(file) => (StatusCode::OK, Some(file)),
+                Err(e) => {
+                    error!("failed to open: \"{}\": {}", to_serve.to_string_lossy(), e);
+                    (StatusCode::NOT_FOUND, None)
+                }
+            }
+        }
+    };
+
+    let resp = http::Response::builder().status(status).body(()).unwrap();
+
+    match stream.send_response(resp).await {
+        Ok(_) => {
+            info!("successfully respond to connection");
+        }
+        Err(err) => {
+            error!("unable to send response to connection peer: {err:?}");
+        }
+    }
+
+    if let Some(mut file) = to_serve {
+        loop {
+            use tokio::io::AsyncReadExt as _;
+
+            let mut buf = bytes::BytesMut::with_capacity(4096 * 10);
+            if file.read_buf(&mut buf).await? == 0 {
+                break;
+            }
+            stream.send_data(buf.freeze()).await?;
+        }
+    }
+
+    Ok(stream.finish().await?)
 }
