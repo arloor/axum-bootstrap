@@ -66,6 +66,9 @@ serde_json = "1"
 
 futures-util = "0.3"
 pin-project-lite = "0.2"
+h3 = "0.0.8"
+h3-quinn = "0.0.10"
+h3-webtransport = "0.1.2"
 
 
 [dev-dependencies]
@@ -96,3 +99,18 @@ reqwest = { version = "0.12", default-features = false, features = [
     "macos-system-configuration",
     "stream",
 ] }
+
+# h3
+bytes = "1"
+http = "1"
+quinn = { version = "0.11", default-features = false, features = [
+    "runtime-tokio",
+    "rustls",
+    "ring",
+] }
+rustls = { version = "0.23", default-features = false, features = [
+    "logging",
+    "ring",
+    "std",
+] }
+structopt = "0.3"
