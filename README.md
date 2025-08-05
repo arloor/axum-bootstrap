@@ -32,3 +32,9 @@ docker run -d --rm  --name mysql \
 -e MYSQL_ROOT_PASSWORD=xxxxxx \
 docker.io/library/mysql:9.1 
 ```
+
+### HTTP3
+
+等待hyper支持HTTP3
+
+[https://github.com/hyperium/hyper/pull/3925](https://github.com/hyperium/hyper/pull/3925)
