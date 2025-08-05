@@ -126,6 +126,14 @@ where
             }
             false => serve_plantext(&self.router, server, graceful, self.port, self.interceptor.clone(), self.idle_timeout).await?,
         }
+
+        if let Some(tls_param) = &self.tls_param
+            && cfg!(feature = "http3")
+            && tls_param.tls
+        {
+            info!("HTTP/3 is enabled with TLS");
+        }
+
         Ok(())
     }
 }

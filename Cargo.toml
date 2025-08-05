@@ -1,17 +1,17 @@
 [package]
 name = "axum-bootstrap"
 version = "0.1.9"
-edition = "2021"
+edition = "2024"
 authors = ["arloor <admin@arloor.com>"]
 license = "MIT OR Apache-2.0"
-rust-version = "1.80"
+rust-version = "1.88"
 repository = "https://github.com/arloor/axum-bootstrap"
 description = "a way to bootstrap a web server with axum, including TLS, logging, monitoring, and more."
 keywords = ["axum", "http-server"]
 readme = "README.md"
 
 [features]
-default = ["use_tracing_subscriber"]
+default = ["use_tracing_subscriber", "http3"]
 mysql = []
 http3 = ["dep:h3", "dep:h3-quinn", "dep:quinn"]
 use_tracing_subscriber = ["dep:tracing-subscriber", "dep:time"]
