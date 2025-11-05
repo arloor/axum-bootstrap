@@ -1,6 +1,6 @@
 [package]
 name = "axum-bootstrap"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 authors = ["arloor <admin@arloor.com>"]
 license = "MIT OR Apache-2.0"
@@ -27,8 +27,8 @@ tokio-rustls = { version = "0.26", features = [
     "logging",
     "tls12",
 ], default-features = false }
-socket2 = "0.5.8"
-rustls-pki-types = "1.10.1"
+socket2 = "0.6"
+rustls-pki-types = "1"
 rustls-pemfile = "2.2.0"
 tokio = { version = "1", features = ["full"] }
 
@@ -43,7 +43,7 @@ hyper-util = { version = "0.1", features = [
 
 # 日志和监控
 log = "0.4"
-flexi_logger = { version = "0.30", optional = true }
+flexi_logger = { version = "0.31", optional = true }
 env_logger = { version = "0.11", optional = true }
 chrono = "0.4"
 # tracing使用
@@ -71,7 +71,7 @@ pin-project-lite = "0.2"
 [dev-dependencies]
 # 以下依赖仅在示例代码中使用
 clap = { version = "4.5", features = ["derive"] }
-prometheus-client = "0.23"
+prometheus-client = "0.24"
 serde_yaml = "0.9"
 tower-http = { version = "0.6", features = [
     "compression-full",
