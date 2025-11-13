@@ -1,4 +1,4 @@
-use std::{convert::Infallible, fmt::Display, net::SocketAddr, sync::Arc, time::Duration};
+use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
 
 pub mod init_log;
 pub mod util;
@@ -7,14 +7,14 @@ use crate::util::{
     io::{self, create_dual_stack_listener},
     tls::{tls_config, TlsAcceptor},
 };
-use anyhow::anyhow;
+
 use axum::{
     extract::Request,
     response::{IntoResponse, Response},
     Router,
 };
 
-use hyper::{body::Incoming, StatusCode};
+use hyper::body::Incoming;
 use hyper_util::rt::TokioExecutor;
 use log::{info, warn};
 use tokio::{pin, sync::broadcast, time};
@@ -56,7 +56,7 @@ pub trait ReqInterceptor: Send {
 pub struct DummyInterceptor;
 
 impl ReqInterceptor for DummyInterceptor {
-    type Error = AppError;
+    type Error = error::AppError;
 
     async fn intercept(&self, req: Request<Incoming>, _ip: SocketAddr) -> InterceptResult<Self::Error> {
         InterceptResult::Continue(req)
@@ -335,41 +335,48 @@ async fn handle_signal() -> Result<(), DynError> {
     Ok(())
 }
 
-// Make our own error that wraps `anyhow::Error`.
-#[derive(Debug)]
-pub struct AppError(anyhow::Error);
+pub mod error {
+    use anyhow::anyhow;
+    use std::fmt::Display;
 
-impl Display for AppError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+    use axum::response::{IntoResponse, Response};
+    use hyper::StatusCode;
+
+    // Make our own error that wraps `anyhow::Error`.
+    #[derive(Debug)]
+    pub struct AppError(anyhow::Error);
+
+    impl Display for AppError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.0.fmt(f)
+        }
     }
-}
-
-// Tell axum how to convert `AppError` into a response.
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        let err = self.0;
-        // Because `TraceLayer` wraps each request in a span that contains the request
-        // method, uri, etc we don't need to include those details here
-        tracing::error!(%err, "error");
-        (StatusCode::INTERNAL_SERVER_ERROR, format!("ERROR: {}", &err)).into_response()
+    // Tell axum how to convert `AppError` into a response.
+    impl IntoResponse for AppError {
+        fn into_response(self) -> Response {
+            let err = self.0;
+            // Because `TraceLayer` wraps each request in a span that contains the request
+            // method, uri, etc we don't need to include those details here
+            tracing::error!(%err, "error");
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("ERROR: {}", &err)).into_response()
+        }
     }
-}
 
-// This enables using `?` on functions that return `Result<_, anyhow::Error>` to turn them into
-// `Result<_, AppError>`. That way you don't need to do that manually.
-impl<E> From<E> for AppError
-where
-    E: Into<anyhow::Error>,
-{
-    fn from(err: E) -> Self {
-        Self(err.into())
+    // This enables using `?` on functions that return `Result<_, anyhow::Error>` to turn them into
+    // `Result<_, AppError>`. That way you don't need to do that manually.
+    impl<E> From<E> for AppError
+    where
+        E: Into<anyhow::Error>,
+    {
+        fn from(err: E) -> Self {
+            Self(err.into())
+        }
     }
-}
 
-impl AppError {
-    pub fn new<T: std::error::Error + Send + Sync + 'static>(err: T) -> Self {
-        Self(anyhow!(err))
+    impl AppError {
+        pub fn new<T: std::error::Error + Send + Sync + 'static>(err: T) -> Self {
+            Self(anyhow!(err))
+        }
     }
 }
 

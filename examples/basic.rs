@@ -106,7 +106,7 @@ mod handler {
     use sqlx::FromRow;
     use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
-    use axum_bootstrap::{util::json::StupidValue, AppError};
+    use axum_bootstrap::{error::AppError, util::json::StupidValue};
     use tokio::time::sleep;
     use tower_http::{compression::CompressionLayer, cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 
