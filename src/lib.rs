@@ -322,27 +322,25 @@ where
 }
 
 #[cfg(unix)]
-pub async fn handle_signal(shutdown_tx: mpsc::Sender<()>) -> Result<(), DynError> {
+pub async fn wait_signal() -> Result<(), DynError> {
     use log::info;
     use tokio::signal::unix::{signal, SignalKind};
     let mut terminate_signal = signal(SignalKind::terminate())?;
     tokio::select! {
         _ = terminate_signal.recv() => {
-            info!("receive terminate signal, shutdowning");
+            info!("receive terminate signal");
         },
         _ = tokio::signal::ctrl_c() => {
-            info!("ctrl_c => shutdowning");
+            info!("receive ctrl_c signal");
         },
     };
-    let _ = shutdown_tx.send(()).await;
     Ok(())
 }
 
 #[cfg(windows)]
-pub async fn handle_signal(shutdown_tx: mpsc::Sender<()>) -> Result<(), DynError> {
+pub async fn wait_signal() -> Result<(), DynError> {
     let _ = tokio::signal::ctrl_c().await;
-    info!("ctrl_c => shutdowning");
-    let _ = shutdown_tx.send(()).await;
+    info!("receive ctrl_c signal");
     Ok(())
 }
 
