@@ -111,7 +111,7 @@ where
         self
     }
 
-    pub async fn run(mut self) -> Result<(), DynError> {
+    pub async fn run(mut self) -> Result<(), std::io::Error> {
         let use_tls = match self.tls_param.clone() {
             Some(config) => config.tls,
             None => false,
@@ -226,7 +226,7 @@ fn handle_hyper_error(client_socket_addr: SocketAddr, http_err: DynError) {
 async fn serve_plantext<I>(
     app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown,
     port: u16, interceptor: Option<I>, timeout: Duration, shutdown_rx: &mut mpsc::Receiver<()>,
-) -> Result<(), DynError>
+) -> Result<(), std::io::Error>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
 {
@@ -264,7 +264,7 @@ where
 async fn serve_tls<I>(
     app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown,
     port: u16, tls_param: &TlsParam, interceptor: Option<I>, timeout: Duration, shutdown_rx: &mut mpsc::Receiver<()>,
-) -> Result<(), DynError>
+) -> Result<(), std::io::Error>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
 {
