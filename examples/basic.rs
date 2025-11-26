@@ -54,34 +54,42 @@ pub async fn main() -> Result<(), DynError> {
             )
             .await?;
 
-        let server = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client, pool }))
-            .with_timeout(Duration::from_secs(120))
-            .with_tls_param(match PARAM.tls {
-                true => Some(TlsParam {
-                    tls: true,
-                    cert: PARAM.cert.to_string(),
-                    key: PARAM.key.to_string(),
-                }),
-                false => None,
-            });
+        let (server, shutdown_tx) = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client, pool }));
+        let server = server.with_timeout(Duration::from_secs(120)).with_tls_param(match PARAM.tls {
+            true => Some(TlsParam {
+                tls: true,
+                cert: PARAM.cert.to_string(),
+                key: PARAM.key.to_string(),
+            }),
+            false => None,
+        });
+
+        // Spawn a task to handle signals and send shutdown signal
+        tokio::spawn(async move {
+            let _ = axum_bootstrap::handle_signal(shutdown_tx).await;
+        });
 
         server.run().await?;
     }
 
     #[cfg(not(feature = "mysql"))]
     {
-        axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client }))
-            .with_timeout(Duration::from_secs(120))
-            .with_tls_param(match PARAM.tls {
-                true => Some(TlsParam {
-                    tls: true,
-                    cert: PARAM.cert.to_string(),
-                    key: PARAM.key.to_string(),
-                }),
-                false => None,
-            })
-            .run()
-            .await?;
+        let (server, shutdown_tx) = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client }));
+        let server = server.with_timeout(Duration::from_secs(120)).with_tls_param(match PARAM.tls {
+            true => Some(TlsParam {
+                tls: true,
+                cert: PARAM.cert.to_string(),
+                key: PARAM.key.to_string(),
+            }),
+            false => None,
+        });
+
+        // Spawn a task to handle signals and send shutdown signal
+        tokio::spawn(async move {
+            let _ = axum_bootstrap::handle_signal(shutdown_tx).await;
+        });
+
+        server.run().await?;
     }
 
     Ok(())

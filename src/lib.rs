@@ -18,7 +18,10 @@ use axum::{
 use hyper::body::Incoming;
 use hyper_util::rt::TokioExecutor;
 use log::{info, warn};
-use tokio::{pin, sync::broadcast, time};
+use tokio::{
+    sync::{broadcast, mpsc},
+    time,
+};
 use tokio_rustls::rustls::ServerConfig;
 use tower::{Service, ServiceExt};
 use util::format::SocketAddrFormat;
@@ -32,6 +35,7 @@ pub struct Server<I: ReqInterceptor = DummyInterceptor> {
     router: Router,
     pub interceptor: Option<I>,
     pub idle_timeout: Duration,
+    shutdown_rx: mpsc::Receiver<()>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,14 +70,17 @@ impl ReqInterceptor for DummyInterceptor {
 
 pub type DefaultServer = Server<DummyInterceptor>;
 
-pub fn new_server(port: u16, router: Router) -> Server {
-    Server {
+pub fn new_server(port: u16, router: Router) -> (Server, mpsc::Sender<()>) {
+    let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
+    let server = Server {
         port,
         tls_param: None, // No TLS by default
         router,
         interceptor: None,
         idle_timeout: Duration::from_secs(120),
-    }
+        shutdown_rx,
+    };
+    (server, shutdown_tx)
 }
 
 impl<I> Server<I>
@@ -90,6 +97,7 @@ where
             router: self.router,
             interceptor: Some(interceptor),
             idle_timeout: self.idle_timeout, // keep the same idle timeout
+            shutdown_rx: self.shutdown_rx,
         }
     }
     pub fn with_tls_param(mut self, tls_param: Option<TlsParam>) -> Self {
@@ -103,7 +111,7 @@ where
         self
     }
 
-    pub async fn run(&self) -> Result<(), DynError> {
+    pub async fn run(mut self) -> Result<(), DynError> {
         let use_tls = match self.tls_param.clone() {
             Some(config) => config.tls,
             None => false,
@@ -122,10 +130,13 @@ where
                     self.tls_param.as_ref().expect("should be some"),
                     self.interceptor.clone(),
                     self.idle_timeout,
+                    &mut self.shutdown_rx,
                 )
                 .await?
             }
-            false => serve_plantext(&self.router, server, graceful, self.port, self.interceptor.clone(), self.idle_timeout).await?,
+            false => {
+                serve_plantext(&self.router, server, graceful, self.port, self.interceptor.clone(), self.idle_timeout, &mut self.shutdown_rx).await?
+            }
         }
         Ok(())
     }
@@ -214,17 +225,15 @@ fn handle_hyper_error(client_socket_addr: SocketAddr, http_err: DynError) {
 
 async fn serve_plantext<I>(
     app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown,
-    port: u16, interceptor: Option<I>, timeout: Duration,
+    port: u16, interceptor: Option<I>, timeout: Duration, shutdown_rx: &mut mpsc::Receiver<()>,
 ) -> Result<(), DynError>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
 {
     let listener = create_dual_stack_listener(port).await?;
-    let signal = handle_signal();
-    pin!(signal);
     loop {
         tokio::select! {
-            _ = signal.as_mut() => {
+            _ = shutdown_rx.recv() => {
                 info!("start graceful shutdown!");
                 drop(listener);
                 break;
@@ -251,9 +260,10 @@ where
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn serve_tls<I>(
     app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown,
-    port: u16, tls_param: &TlsParam, interceptor: Option<I>, timeout: Duration,
+    port: u16, tls_param: &TlsParam, interceptor: Option<I>, timeout: Duration, shutdown_rx: &mut mpsc::Receiver<()>,
 ) -> Result<(), DynError>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
@@ -275,11 +285,9 @@ where
     });
     let mut rx = tx_clone.subscribe();
     let mut acceptor: TlsAcceptor = TlsAcceptor::new(tls_config(&tls_param.key, &tls_param.cert)?, create_dual_stack_listener(port).await?);
-    let signal = handle_signal();
-    pin!(signal);
     loop {
         tokio::select! {
-            _ = signal.as_mut() => {
+            _ = shutdown_rx.recv() => {
                 info!("start graceful shutdown!");
                 drop(acceptor);
                 break;
@@ -314,7 +322,7 @@ where
 }
 
 #[cfg(unix)]
-async fn handle_signal() -> Result<(), DynError> {
+pub async fn handle_signal(shutdown_tx: mpsc::Sender<()>) -> Result<(), DynError> {
     use log::info;
     use tokio::signal::unix::{signal, SignalKind};
     let mut terminate_signal = signal(SignalKind::terminate())?;
@@ -326,13 +334,15 @@ async fn handle_signal() -> Result<(), DynError> {
             info!("ctrl_c => shutdowning");
         },
     };
+    let _ = shutdown_tx.send(()).await;
     Ok(())
 }
 
 #[cfg(windows)]
-async fn handle_signal() -> Result<(), DynError> {
+pub async fn handle_signal(shutdown_tx: mpsc::Sender<()>) -> Result<(), DynError> {
     let _ = tokio::signal::ctrl_c().await;
     info!("ctrl_c => shutdowning");
+    let _ = shutdown_tx.send(()).await;
     Ok(())
 }
 
