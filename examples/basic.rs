@@ -53,8 +53,9 @@ pub async fn main() -> Result<(), DynError> {
                     .timezone(Some(String::from("+08:00"))),
             )
             .await?;
-
-        let (server, shutdown_tx) = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client, pool }));
+        use tokio::sync::broadcast;
+        let (shutdown_tx, _) = broadcast::channel(1);
+        let server = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client, pool }), shutdown_tx.subscribe());
         let server = server.with_timeout(Duration::from_secs(120)).with_tls_param(match PARAM.tls {
             true => Some(TlsParam {
                 tls: true,
@@ -76,7 +77,9 @@ pub async fn main() -> Result<(), DynError> {
 
     #[cfg(not(feature = "mysql"))]
     {
-        let (server, shutdown_tx) = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client }));
+        use tokio::sync::broadcast;
+        let (shutdown_tx, _) = broadcast::channel(1);
+        let server = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client }), shutdown_tx.subscribe());
         let server = server.with_timeout(Duration::from_secs(120)).with_tls_param(match PARAM.tls {
             true => Some(TlsParam {
                 tls: true,
@@ -89,7 +92,7 @@ pub async fn main() -> Result<(), DynError> {
         // Spawn a task to handle signals and send shutdown signal
         tokio::spawn(async move {
             if (axum_bootstrap::wait_signal().await).is_ok() {
-                let _ = shutdown_tx.send(()).await;
+                let _ = shutdown_tx.send(());
             }
         });
 

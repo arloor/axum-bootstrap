@@ -18,10 +18,7 @@ use axum::{
 use hyper::body::Incoming;
 use hyper_util::rt::TokioExecutor;
 use log::{info, warn};
-use tokio::{
-    sync::{broadcast, mpsc},
-    time,
-};
+use tokio::{sync::broadcast, time};
 use tokio_rustls::rustls::ServerConfig;
 use tower::{Service, ServiceExt};
 use util::format::SocketAddrFormat;
@@ -35,7 +32,7 @@ pub struct Server<I: ReqInterceptor = DummyInterceptor> {
     router: Router,
     pub interceptor: Option<I>,
     pub idle_timeout: Duration,
-    shutdown_rx: mpsc::Receiver<()>,
+    shutdown_rx: broadcast::Receiver<()>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,8 +67,7 @@ impl ReqInterceptor for DummyInterceptor {
 
 pub type DefaultServer = Server<DummyInterceptor>;
 
-pub fn new_server(port: u16, router: Router) -> (Server, mpsc::Sender<()>) {
-    let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
+pub fn new_server(port: u16, router: Router, shutdown_rx: broadcast::Receiver<()>) -> Server {
     let server = Server {
         port,
         tls_param: None, // No TLS by default
@@ -80,7 +76,7 @@ pub fn new_server(port: u16, router: Router) -> (Server, mpsc::Sender<()>) {
         idle_timeout: Duration::from_secs(120),
         shutdown_rx,
     };
-    (server, shutdown_tx)
+    server
 }
 
 impl<I> Server<I>
@@ -225,7 +221,7 @@ fn handle_hyper_error(client_socket_addr: SocketAddr, http_err: DynError) {
 
 async fn serve_plantext<I>(
     app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown,
-    port: u16, interceptor: Option<I>, timeout: Duration, shutdown_rx: &mut mpsc::Receiver<()>,
+    port: u16, interceptor: Option<I>, timeout: Duration, shutdown_rx: &mut broadcast::Receiver<()>,
 ) -> Result<(), std::io::Error>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
@@ -263,7 +259,7 @@ where
 #[allow(clippy::too_many_arguments)]
 async fn serve_tls<I>(
     app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown,
-    port: u16, tls_param: &TlsParam, interceptor: Option<I>, timeout: Duration, shutdown_rx: &mut mpsc::Receiver<()>,
+    port: u16, tls_param: &TlsParam, interceptor: Option<I>, timeout: Duration, shutdown_rx: &mut broadcast::Receiver<()>,
 ) -> Result<(), std::io::Error>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
