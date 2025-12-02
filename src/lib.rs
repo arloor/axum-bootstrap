@@ -264,8 +264,7 @@ async fn serve_tls<I>(
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
 {
-    let (tx, _rx) = broadcast::channel::<Arc<ServerConfig>>(10);
-    let tx_clone = tx.clone();
+    let (tx, mut rx) = broadcast::channel::<Arc<ServerConfig>>(10);
     let tls_param_clone = tls_param.clone();
     tokio::spawn(async move {
         info!("update tls config every {REFRESH_INTERVAL:?}");
@@ -279,7 +278,6 @@ where
             }
         }
     });
-    let mut rx = tx_clone.subscribe();
     let mut acceptor: TlsAcceptor = TlsAcceptor::new(tls_config(&tls_param.key, &tls_param.cert)?, create_dual_stack_listener(port).await?);
     loop {
         tokio::select! {
