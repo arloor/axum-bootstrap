@@ -18,7 +18,10 @@ use axum::{
 use hyper::body::Incoming;
 use hyper_util::rt::TokioExecutor;
 use log::{info, warn};
-use tokio::{sync::broadcast, time};
+use tokio::{
+    sync::broadcast::{self, error::RecvError},
+    time,
+};
 use tokio_rustls::rustls::ServerConfig;
 use tower::{Service, ServiceExt};
 use util::format::SocketAddrFormat;
@@ -68,15 +71,14 @@ impl ReqInterceptor for DummyInterceptor {
 pub type DefaultServer = Server<DummyInterceptor>;
 
 pub fn new_server(port: u16, router: Router, shutdown_rx: broadcast::Receiver<()>) -> Server {
-    let server = Server {
+    Server {
         port,
         tls_param: None, // No TLS by default
         router,
         interceptor: None,
         idle_timeout: Duration::from_secs(120),
         shutdown_rx,
-    };
-    server
+    }
 }
 
 impl<I> Server<I>
@@ -245,13 +247,9 @@ where
             }
         }
     }
-    tokio::select! {
-        _ = graceful.shutdown() => {
-            info!("Gracefully shutdown!");
-        },
-        _ = tokio::time::sleep(GRACEFUL_SHUTDOWN_TIMEOUT) => {
-            info!("Waited {GRACEFUL_SHUTDOWN_TIMEOUT:?} for graceful shutdown, aborting...");
-        }
+    match tokio::time::timeout(GRACEFUL_SHUTDOWN_TIMEOUT, graceful.shutdown()).await {
+        Ok(_) => info!("Gracefully shutdown!"),
+        Err(_) => info!("Waited {GRACEFUL_SHUTDOWN_TIMEOUT:?} for graceful shutdown, aborting..."),
     }
     Ok(())
 }
@@ -287,11 +285,23 @@ where
                 break;
             }
             message = rx.recv() => {
-                #[allow(clippy::expect_used)]
-                let new_config = message.expect("Channel should not be closed");
-                // Replace the acceptor with the new one
-                acceptor.replace_config(new_config);
-                info!("replaced tls config");
+                match message {
+                    Ok(new_config) => {
+                        acceptor.replace_config(new_config);
+                        info!("replaced tls config");
+                    },
+                    Err(e) => {
+                        match e {
+                            RecvError::Closed => {
+                                warn!("this channel should not be closed!");
+                                break;
+                            },
+                            RecvError::Lagged(n) => {
+                                warn!("lagged {n} messages, this may cause tls config not updated in time");
+                            }
+                        }
+                    }
+                }
             }
             conn = acceptor.accept() => {
                 match conn {
@@ -304,13 +314,9 @@ where
             }
         }
     }
-    tokio::select! {
-        _ = graceful.shutdown() => {
-            info!("Gracefully shutdown!");
-        },
-        _ = tokio::time::sleep(GRACEFUL_SHUTDOWN_TIMEOUT) => {
-            info!("Waited {GRACEFUL_SHUTDOWN_TIMEOUT:?} for graceful shutdown, aborting...");
-        }
+    match tokio::time::timeout(GRACEFUL_SHUTDOWN_TIMEOUT, graceful.shutdown()).await {
+        Ok(_) => info!("Gracefully shutdown!"),
+        Err(_) => info!("Waited {GRACEFUL_SHUTDOWN_TIMEOUT:?} for graceful shutdown, aborting..."),
     }
     Ok(())
 }
