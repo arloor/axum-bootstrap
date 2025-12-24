@@ -19,7 +19,7 @@ use hyper::body::Incoming;
 use hyper_util::rt::TokioExecutor;
 use log::{info, warn};
 use tokio::{
-    sync::broadcast::{self, Receiver, error::RecvError},
+    sync::broadcast::{self, Receiver, Sender, error::RecvError},
     time,
 };
 use tokio_rustls::rustls::ServerConfig;
@@ -321,8 +321,13 @@ where
     Ok(())
 }
 
-pub fn register_shutdown_receiver() -> Result<Receiver<()>, DynError> {
+pub fn subscribe_shutdown_receiver() -> Receiver<()> {
     let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
+    subscribe_shutdown_sender(shutdown_tx);
+    shutdown_rx
+}
+
+pub fn subscribe_shutdown_sender(shutdown_tx: Sender<()>) {
     tokio::spawn(async move {
         match wait_signal().await {
             Ok(_) => {
@@ -334,7 +339,6 @@ pub fn register_shutdown_receiver() -> Result<Receiver<()>, DynError> {
             }
         }
     });
-    Ok(shutdown_rx)
 }
 
 #[cfg(unix)]
