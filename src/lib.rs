@@ -338,7 +338,7 @@ pub async fn register_shutdown_receiver() -> Result<Receiver<()>, DynError> {
 }
 
 #[cfg(unix)]
-pub(crate) async fn wait_signal() -> Result<(), DynError> {
+pub async fn wait_signal() -> Result<(), DynError> {
     use log::info;
     use tokio::signal::unix::{SignalKind, signal};
     let mut terminate_signal = signal(SignalKind::terminate())?;
@@ -354,7 +354,7 @@ pub(crate) async fn wait_signal() -> Result<(), DynError> {
 }
 
 #[cfg(windows)]
-pub(crate) async fn wait_signal() -> Result<(), DynError> {
+pub async fn wait_signal() -> Result<(), DynError> {
     let _ = tokio::signal::ctrl_c().await;
     info!("receive ctrl_c signal");
     Ok(())
