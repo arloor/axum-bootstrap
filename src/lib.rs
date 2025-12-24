@@ -321,7 +321,7 @@ where
     Ok(())
 }
 
-pub fn subscribe_shutdown_receiver() -> Receiver<()> {
+pub fn generate_shutdown_receiver() -> Receiver<()> {
     let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
     subscribe_shutdown_sender(shutdown_tx);
     shutdown_rx

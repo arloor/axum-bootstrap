@@ -53,9 +53,8 @@ pub async fn main() -> Result<(), DynError> {
                     .timezone(Some(String::from("+08:00"))),
             )
             .await?;
-        use axum_bootstrap::subscribe_shutdown_receiver;
-        let server =
-            axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client, pool }), register_shutdown_receiver());
+        use axum_bootstrap::generate_shutdown_receiver;
+        let server = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client, pool }), register_shutdown_receiver());
         let server = server.with_timeout(Duration::from_secs(120)).with_tls_param(match PARAM.tls {
             true => Some(TlsParam {
                 tls: true,
@@ -70,9 +69,8 @@ pub async fn main() -> Result<(), DynError> {
 
     #[cfg(not(feature = "mysql"))]
     {
-        use axum_bootstrap::subscribe_shutdown_receiver;
-        let server =
-            axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client }), subscribe_shutdown_receiver());
+        use axum_bootstrap::generate_shutdown_receiver;
+        let server = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client }), generate_shutdown_receiver());
         let server = server.with_timeout(Duration::from_secs(120)).with_tls_param(match PARAM.tls {
             true => Some(TlsParam {
                 tls: true,
