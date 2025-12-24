@@ -6,20 +6,20 @@ pub mod util;
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 use crate::util::{
     io::{self, create_dual_stack_listener},
-    tls::{tls_config, TlsAcceptor},
+    tls::{TlsAcceptor, tls_config},
 };
 
 use axum::{
+    Router,
     extract::Request,
     response::{IntoResponse, Response},
-    Router,
 };
 
 use hyper::body::Incoming;
 use hyper_util::rt::TokioExecutor;
 use log::{info, warn};
 use tokio::{
-    sync::broadcast::{self, error::RecvError},
+    sync::broadcast::{self, Receiver, error::RecvError},
     time,
 };
 use tokio_rustls::rustls::ServerConfig;
@@ -321,10 +321,26 @@ where
     Ok(())
 }
 
+pub async fn register_shutdown_receiver() -> Result<Receiver<()>, DynError> {
+    let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
+    tokio::spawn(async move {
+        match wait_signal().await {
+            Ok(_) => {
+                let _ = shutdown_tx.send(());
+            }
+            Err(e) => {
+                log::error!("wait_signal error: {}", e);
+                panic!("wait_signal error: {}", e);
+            }
+        }
+    });
+    Ok(shutdown_rx)
+}
+
 #[cfg(unix)]
-pub async fn wait_signal() -> Result<(), DynError> {
+pub(crate) async fn wait_signal() -> Result<(), DynError> {
     use log::info;
-    use tokio::signal::unix::{signal, SignalKind};
+    use tokio::signal::unix::{SignalKind, signal};
     let mut terminate_signal = signal(SignalKind::terminate())?;
     tokio::select! {
         _ = terminate_signal.recv() => {
@@ -338,7 +354,7 @@ pub async fn wait_signal() -> Result<(), DynError> {
 }
 
 #[cfg(windows)]
-pub async fn wait_signal() -> Result<(), DynError> {
+pub(crate) async fn wait_signal() -> Result<(), DynError> {
     let _ = tokio::signal::ctrl_c().await;
     info!("receive ctrl_c signal");
     Ok(())

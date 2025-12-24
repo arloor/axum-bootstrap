@@ -53,9 +53,9 @@ pub async fn main() -> Result<(), DynError> {
                     .timezone(Some(String::from("+08:00"))),
             )
             .await?;
-        use tokio::sync::broadcast;
-        let (shutdown_tx, _) = broadcast::channel(1);
-        let server = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client, pool }), shutdown_tx.subscribe());
+        use axum_bootstrap::register_shutdown_receiver;
+        let server =
+            axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client, pool }), register_shutdown_receiver().await?);
         let server = server.with_timeout(Duration::from_secs(120)).with_tls_param(match PARAM.tls {
             true => Some(TlsParam {
                 tls: true,
@@ -63,13 +63,6 @@ pub async fn main() -> Result<(), DynError> {
                 key: PARAM.key.to_string(),
             }),
             false => None,
-        });
-
-        // Spawn a task to handle signals and send shutdown signal
-        tokio::spawn(async move {
-            if (axum_bootstrap::wait_signal().await).is_ok() {
-                let _ = shutdown_tx.send(()).await;
-            }
         });
 
         server.run().await?;
@@ -77,9 +70,8 @@ pub async fn main() -> Result<(), DynError> {
 
     #[cfg(not(feature = "mysql"))]
     {
-        use tokio::sync::broadcast;
-        let (shutdown_tx, _) = broadcast::channel(1);
-        let server = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client }), shutdown_tx.subscribe());
+        use axum_bootstrap::register_shutdown_receiver;
+        let server = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client }), register_shutdown_receiver().await?);
         let server = server.with_timeout(Duration::from_secs(120)).with_tls_param(match PARAM.tls {
             true => Some(TlsParam {
                 tls: true,
@@ -87,13 +79,6 @@ pub async fn main() -> Result<(), DynError> {
                 key: PARAM.key.to_string(),
             }),
             false => None,
-        });
-
-        // Spawn a task to handle signals and send shutdown signal
-        tokio::spawn(async move {
-            if (axum_bootstrap::wait_signal().await).is_ok() {
-                let _ = shutdown_tx.send(());
-            }
         });
 
         server.run().await?;
@@ -107,10 +92,10 @@ mod handler {
     use std::{io, net::SocketAddr, sync::Arc, time::Duration};
 
     use axum::{
+        Json, Router,
         extract::{ConnectInfo, MatchedPath, Request, State},
         http::{self, HeaderValue},
         routing::get,
-        Json, Router,
     };
     use axum_macros::debug_handler;
     use chrono::NaiveDateTime;
