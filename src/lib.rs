@@ -321,7 +321,7 @@ where
     Ok(())
 }
 
-pub async fn register_shutdown_receiver() -> Result<Receiver<()>, DynError> {
+pub fn register_shutdown_receiver() -> Result<Receiver<()>, DynError> {
     let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
     tokio::spawn(async move {
         match wait_signal().await {
