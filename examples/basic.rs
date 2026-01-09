@@ -140,7 +140,7 @@ mod handler {
                     .on_failure(()),
                 CorsLayer::permissive(),
                 TimeoutLayer::new(Duration::from_secs(30)),
-                CompressionLayer::new(),
+                CompressionLayer::new().gzip(true).br(true).deflate(true).zstd(true),
             ))
             .with_state(Arc::new(app_state))
     }
