@@ -72,7 +72,6 @@ pin-project-lite = "0.2"
 # 以下依赖仅在示例代码中使用
 clap = { version = "4.5", features = ["derive"] }
 prometheus-client = "0.24"
-serde_yaml = "0.9"
 tower-http = { version = "0.6", features = [
     "compression-full",
     "cors",
