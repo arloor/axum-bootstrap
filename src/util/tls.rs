@@ -1,13 +1,18 @@
-use std::{fs::File, io, net::SocketAddr, sync::Arc};
+use std::{io, net::SocketAddr, sync::Arc};
 
 pub fn tls_config(key: &String, cert: &String) -> Result<Arc<ServerConfig>, std::io::Error> {
-    use std::io::{self, BufReader};
-    let key_file = File::open(key).map_err(|_| "open private key failed").map_err(std::io::Error::other)?;
-    let cert_file = File::open(cert).map_err(|_| "open cert failed").map_err(std::io::Error::other)?;
-    let certs = rustls_pemfile::certs(&mut BufReader::new(cert_file)).collect::<io::Result<Vec<rustls_pki_types::CertificateDer<'static>>>>()?;
-    let key = rustls_pemfile::private_key(&mut BufReader::new(key_file))?
-        .ok_or("can not find any pem in key file")
-        .map_err(std::io::Error::other)?;
+    use rustls_pki_types::pem::PemObject;
+    use rustls_pki_types::{CertificateDer, PrivateKeyDer};
+
+    // Install default crypto provider if not already set
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    let certs = CertificateDer::pem_file_iter(cert)
+        .map_err(|_| io::Error::other("open cert failed"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| io::Error::other("invalid cert pem"))?;
+
+    let key = PrivateKeyDer::from_pem_file(key).map_err(|_| io::Error::other("failed to read private key"))?;
 
     let mut config = ServerConfig::builder()
         .with_no_client_auth()
