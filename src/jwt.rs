@@ -1,22 +1,23 @@
 use axum::{
     extract::{FromRequestParts, Request, State},
-    http::{request::Parts, StatusCode},
+    http::{StatusCode, request::Parts},
     middleware::Next,
     response::{Html, Response},
 };
 use axum_extra::extract::CookieJar;
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 // JWT过期时间（7天）
 const JWT_EXPIRATION_HOURS: i64 = 24 * 7;
 
+// 可以扩展Claims结构体，添加更多自定义信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String,      // 用户名
-    pub username: String, // 用户名（显式字段）
-    pub exp: usize,       // 过期时间
+    pub username: String, // 用户名（显示字段）
+    pub exp: usize,       // 过期时间, 必须。用于验证是否过期
     pub iat: usize,       // 签发时间
 }
 
@@ -36,10 +37,7 @@ impl JwtConfig {
 }
 
 /// 生成JWT token
-pub fn create_jwt(
-    username: &str,
-    config: &JwtConfig,
-) -> Result<String, jsonwebtoken::errors::Error> {
+pub fn create_jwt(username: &str, config: &JwtConfig) -> Result<String, jsonwebtoken::errors::Error> {
     let now = chrono::Utc::now();
     let exp = (now + chrono::Duration::hours(JWT_EXPIRATION_HOURS)).timestamp() as usize;
     let iat = now.timestamp() as usize;
@@ -63,10 +61,7 @@ pub fn verify_jwt(token: &str, config: &JwtConfig) -> Result<Claims, jsonwebtoke
 
 /// JWT认证中间件
 pub async fn jwt_auth_middleware(
-    State(config): State<Arc<JwtConfig>>,
-    cookie_jar: CookieJar,
-    mut request: Request,
-    next: Next,
+    State(config): State<Arc<JwtConfig>>, cookie_jar: CookieJar, mut request: Request, next: Next,
 ) -> Result<Response, (StatusCode, Html<String>)> {
     // 从cookie中获取JWT token
     let token = cookie_jar
@@ -75,8 +70,7 @@ pub async fn jwt_auth_middleware(
         .ok_or((StatusCode::UNAUTHORIZED, Html("Missing token".to_string())))?;
 
     // 验证JWT token
-    let claims = verify_jwt(&token, &config)
-        .map_err(|_| (StatusCode::UNAUTHORIZED, Html("Invalid token".to_string())))?;
+    let claims = verify_jwt(&token, &config).map_err(|_| (StatusCode::UNAUTHORIZED, Html("Invalid token".to_string())))?;
 
     // 将claims存入request extensions，后续handler可以使用
     request.extensions_mut().insert(claims);
@@ -97,10 +91,10 @@ where
     type Rejection = (StatusCode, Html<String>);
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let claims = parts.extensions.get::<Claims>().ok_or((
-            StatusCode::UNAUTHORIZED,
-            Html("Missing or invalid token".to_string()),
-        ))?;
+        let claims = parts
+            .extensions
+            .get::<Claims>()
+            .ok_or((StatusCode::UNAUTHORIZED, Html("Missing or invalid token".to_string())))?;
 
         Ok(AuthUser {
             username: claims.username.clone(),
