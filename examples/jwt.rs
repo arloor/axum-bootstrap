@@ -126,7 +126,7 @@ mod handler {
     use std::sync::Arc;
 
     use axum::{Json, extract::State};
-    use axum_bootstrap::jwt::{AuthUser, create_jwt};
+    use axum_bootstrap::jwt::AuthUser;
     use axum_extra::extract::{
         CookieJar,
         cookie::{Cookie, SameSite},
@@ -191,7 +191,10 @@ mod handler {
         }
 
         // 生成JWT token
-        let token = create_jwt(&req.username, &state.jwt_config).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let token = state
+            .jwt_config
+            .create_jwt(&req.username)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         // 创建cookie
         let cookie = Cookie::build(("token", token))

@@ -34,29 +34,29 @@ impl JwtConfig {
             decoding_key: DecodingKey::from_secret(secret.as_bytes()),
         }
     }
-}
 
-/// 生成JWT token
-pub fn create_jwt(username: &str, config: &JwtConfig) -> Result<String, jsonwebtoken::errors::Error> {
-    let now = chrono::Utc::now();
-    let exp = (now + chrono::Duration::hours(JWT_EXPIRATION_HOURS)).timestamp() as usize;
-    let iat = now.timestamp() as usize;
+    /// 生成JWT token
+    pub fn create_jwt(&self, username: &str) -> Result<String, jsonwebtoken::errors::Error> {
+        let now = chrono::Utc::now();
+        let exp = (now + chrono::Duration::hours(JWT_EXPIRATION_HOURS)).timestamp() as usize;
+        let iat = now.timestamp() as usize;
 
-    let claims = Claims {
-        sub: username.to_string(),
-        username: username.to_string(),
-        exp,
-        iat,
-    };
+        let claims = Claims {
+            sub: username.to_string(),
+            username: username.to_string(),
+            exp,
+            iat,
+        };
 
-    encode(&Header::default(), &claims, &config.encoding_key)
-}
+        encode(&Header::default(), &claims, &self.encoding_key)
+    }
 
-/// 验证JWT token
-pub fn verify_jwt(token: &str, config: &JwtConfig) -> Result<Claims, jsonwebtoken::errors::Error> {
-    let validation = Validation::default();
-    let token_data = decode::<Claims>(token, &config.decoding_key, &validation)?;
-    Ok(token_data.claims)
+    /// 验证JWT token
+    pub fn verify_jwt(&self, token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+        let validation = Validation::default();
+        let token_data = decode::<Claims>(token, &self.decoding_key, &validation)?;
+        Ok(token_data.claims)
+    }
 }
 
 /// JWT认证中间件
@@ -70,7 +70,9 @@ pub async fn jwt_auth_middleware(
         .ok_or((StatusCode::UNAUTHORIZED, Html("Missing token".to_string())))?;
 
     // 验证JWT token
-    let claims = verify_jwt(&token, &config).map_err(|_| (StatusCode::UNAUTHORIZED, Html("Invalid token".to_string())))?;
+    let claims = config
+        .verify_jwt(&token)
+        .map_err(|_| (StatusCode::UNAUTHORIZED, Html("Invalid token".to_string())))?;
 
     // 将claims存入request extensions，后续handler可以使用
     request.extensions_mut().insert(claims);
