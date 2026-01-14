@@ -1,7 +1,8 @@
 use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
-
 pub mod error;
 pub mod init_log;
+#[cfg(feature = "jwt")]
+pub mod jwt;
 pub mod util;
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 use crate::util::{

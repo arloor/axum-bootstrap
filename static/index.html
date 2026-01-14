@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JWT 认证示例</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            max-width: 800px;
+            width: 100%;
+        }
+
+        .login-container {
+            max-width: 400px;
+            width: 100%;
+        }
+
+        .app-container {
+            max-width: 800px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 32px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        h2 {
+            color: #666;
+            font-size: 18px;
+            font-weight: 400;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        h3 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 15px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 16px;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+            width: auto;
+            padding: 10px 20px;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .user-info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .user-info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .user-info-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .label {
+            color: #666;
+            font-weight: 500;
+        }
+
+        .value {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section:last-child {
+            margin-bottom: 0;
+        }
+
+        .code-block {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <!-- 登录页面 -->
+    <div id="loginContainer" class="container login-container">
+        <h1>🔐 JWT 认证</h1>
+        <h2>请登录以继续</h2>
+
+        <div id="loginAlert" class="alert"></div>
+
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <div class="form-group">
+                <label for="username">用户名</label>
+                <input type="text" id="username" name="username" required autocomplete="username">
+            </div>
+
+            <div class="form-group">
+                <label for="password">密码</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="loginBtn">登录</button>
+        </form>
+    </div>
+
+    <!-- 主应用页面 -->
+    <div id="appContainer" class="container app-container hidden">
+        <h1>✅ 认证成功</h1>
+        <h2>欢迎使用 JWT 认证示例</h2>
+
+        <div id="appAlert" class="alert"></div>
+
+        <div class="section">
+            <h3>👤 用户信息</h3>
+            <div class="user-info">
+                <div class="user-info-item">
+                    <span class="label">用户名:</span>
+                    <span class="value" id="currentUsername">-</span>
+                </div>
+                <div class="user-info-item">
+                    <span class="label">认证状态:</span>
+                    <span class="value" style="color: #28a745;">✓ 已认证</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>🔧 可用操作</h3>
+            <div class="actions">
+                <button class="btn btn-primary" onclick="refreshUserInfo()">🔄 刷新用户信息</button>
+                <button class="btn btn-secondary" onclick="logout()">🚪 退出登录</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>ℹ️ 接口说明</h3>
+            <div class="code-block">登录: POST /api/login
+- 参数: {"username": "...", "password": "..."}
+- 返回: {"success": true, "message": "登录成功"}
+- Cookie: token (HttpOnly, 7天有效)
+
+获取用户信息: GET /api/me
+- 需要认证 (Cookie中的token)
+- 返回: {"username": "..."}
+
+退出登录: POST /api/logout
+- 返回: {"success": true, "message": "已退出登录"}</div>
+        </div>
+    </div>
+
+    <script>
+        // 显示提示消息
+        function showAlert(containerId, message, isError = false) {
+            const alert = document.getElementById(containerId);
+            alert.textContent = message;
+            alert.className = `alert ${isError ? 'alert-error' : 'alert-success'}`;
+            alert.style.display = 'block';
+
+            setTimeout(() => {
+                alert.style.display = 'none';
+            }, 5000);
+        }
+
+        // 检查认证状态
+        async function checkAuth() {
+            try {
+                const response = await fetch('/api/me', {
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    return false;
+                }
+
+                const data = await response.json();
+                return data;
+            } catch (e) {
+                console.error('检查认证失败:', e);
+                return false;
+            }
+        }
+
+        // 处理登录
+        async function handleLogin(event) {
+            event.preventDefault();
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const loginBtn = document.getElementById('loginBtn');
+
+            loginBtn.disabled = true;
+            loginBtn.textContent = '登录中...';
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showAlert('loginAlert', '登录成功！正在跳转...', false);
+                    setTimeout(() => {
+                        showApp();
+                    }, 1000);
+                } else {
+                    showAlert('loginAlert', data.message || '登录失败', true);
+                }
+            } catch (error) {
+                showAlert('loginAlert', '网络错误: ' + error.message, true);
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = '登录';
+            }
+        }
+
+        // 退出登录
+        async function logout() {
+            try {
+                const response = await fetch('/api/logout', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert('appAlert', '已退出登录', false);
+                    setTimeout(() => {
+                        showLogin();
+                    }, 1000);
+                }
+            } catch (e) {
+                showAlert('appAlert', '退出登录失败', true);
+            }
+        }
+
+        // 刷新用户信息
+        async function refreshUserInfo() {
+            try {
+                const response = await fetch('/api/me', {
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    throw new Error('获取用户信息失败');
+                }
+
+                const data = await response.json();
+                document.getElementById('currentUsername').textContent = data.username;
+                showAlert('appAlert', '用户信息已更新', false);
+            } catch (error) {
+                showAlert('appAlert', error.message, true);
+                // 如果获取失败，可能是认证过期，返回登录页
+                setTimeout(() => {
+                    showLogin();
+                }, 2000);
+            }
+        }
+
+        // 显示登录页面
+        function showLogin() {
+            document.getElementById('loginContainer').classList.remove('hidden');
+            document.getElementById('appContainer').classList.add('hidden');
+            document.getElementById('loginForm').reset();
+        }
+
+        // 显示应用页面
+        async function showApp() {
+            const userData = await checkAuth();
+            if (userData) {
+                document.getElementById('currentUsername').textContent = userData.username;
+                document.getElementById('loginContainer').classList.add('hidden');
+                document.getElementById('appContainer').classList.remove('hidden');
+            } else {
+                showLogin();
+            }
+        }
+
+        // 页面加载时检查认证状态
+        window.addEventListener('load', async () => {
+            const userData = await checkAuth();
+            if (userData) {
+                showApp();
+            } else {
+                showLogin();
+            }
+        });
+    </script>
+</body>
+</html>

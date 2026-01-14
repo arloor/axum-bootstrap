@@ -12,6 +12,7 @@ readme = "README.md"
 
 [features]
 default = ["use_tracing_subscriber"]
+jwt = ["dep:jsonwebtoken", "dep:axum-extra", "tower-http/fs"]
 mysql = []
 use_tracing_subscriber = ["dep:tracing-subscriber", "dep:time"]
 use_env_logger = ["dep:env_logger"]
@@ -20,6 +21,11 @@ use_flexi_logger = ["dep:flexi_logger"]
 [[example]]
 name = "basic"
 path = "examples/basic.rs"
+
+[[example]]
+name = "jwt"
+path = "examples/jwt.rs"
+required-features = ["jwt"]
 
 [dependencies]
 # tls需要
@@ -67,6 +73,9 @@ serde_json = "1"
 futures-util = "0.3"
 pin-project-lite = "0.2"
 
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"], optional = true }
+axum-extra = { version = "0.12", features = ["cookie"], optional = true }
+
 
 [dev-dependencies]
 # 以下依赖仅在示例代码中使用
@@ -88,10 +97,5 @@ sqlx-mysql = "0.8"
 
 
 axum-macros = "0.5"
-reqwest = { version = "0.12", default-features = false, features = [
-    "charset",
-    "rustls-tls",
-    "http2",
-    "macos-system-configuration",
-    "stream",
-] }
+reqwest = { version = "0.13" }
+bcrypt = { version = "0.18" }

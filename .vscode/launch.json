@@ -22,5 +22,28 @@
             "args": [],
             "cwd": "${workspaceFolder}"
         },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug  'jwt'",
+            "console": "integratedTerminal",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--example=jwt",
+                    "--features=jwt"
+                ],
+                "filter": {
+                    "name": "jwt",
+                    "kind": "example"
+                }
+            },
+            "args": [
+                "--username=admin",
+                "--password=admin",
+                "--jwt-secret=your_jwt_secret_key",
+            ],
+            "cwd": "${workspaceFolder}"
+        },
     ]
 }
