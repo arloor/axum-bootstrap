@@ -1,6 +1,6 @@
 [package]
 name = "axum-bootstrap"
-version = "0.1.27"
+version = "0.1.28"
 edition = "2024"
 authors = ["arloor <admin@arloor.com>"]
 license = "MIT OR Apache-2.0"
@@ -11,8 +11,14 @@ keywords = ["axum", "http-server"]
 readme = "README.md"
 
 [features]
-default = ["use_tracing_subscriber", "jwt"]
-jwt = ["dep:jsonwebtoken", "dep:axum-extra", "tower-http/fs"]
+default = ["use_tracing_subscriber"]
+jwt = [
+    "dep:jsonwebtoken",
+    "dep:axum-extra",
+    "tower-http/fs",
+    "dep:time",
+    "dep:cookie",
+]
 mysql = []
 use_tracing_subscriber = ["dep:tracing-subscriber", "dep:time"]
 use_env_logger = ["dep:env_logger"]
@@ -75,7 +81,7 @@ pin-project-lite = "0.2"
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"], optional = true }
 axum-extra = { version = "0.12", features = ["cookie"], optional = true }
 rustls = "0.23"
-cookie = "0.18.1"
+cookie = { version = "0.18", optional = true }
 
 
 [dev-dependencies]
