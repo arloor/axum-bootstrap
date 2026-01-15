@@ -208,8 +208,7 @@ mod handler {
     }
 
     pub async fn logout_handler() -> Result<(StatusCode, CookieJar, Json<LoginResponse>), StatusCode> {
-        let logout_cookie = LOGOUT_COOKIE;
-        let jar = CookieJar::new().add(logout_cookie.clone());
+        let jar = CookieJar::new().add(LOGOUT_COOKIE.clone());
 
         Ok((
             StatusCode::OK,

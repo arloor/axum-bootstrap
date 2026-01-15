@@ -14,7 +14,7 @@ use std::sync::{Arc, LazyLock};
 const JWT_EXPIRATION_HOURS: i64 = 24 * 7;
 const AXUM_BOOTSTRAP_TOKEN: &str = "axum-boostrap-token";
 
-pub const LOGOUT_COOKIE: LazyLock<Cookie<'_>> = LazyLock::new(|| {
+pub static LOGOUT_COOKIE: LazyLock<Cookie<'_>> = LazyLock::new(|| {
     Cookie::build((AXUM_BOOTSTRAP_TOKEN, ""))
         .path("/")
         .max_age(time::Duration::seconds(-1))
