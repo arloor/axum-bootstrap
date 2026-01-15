@@ -75,6 +75,7 @@ pin-project-lite = "0.2"
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"], optional = true }
 axum-extra = { version = "0.12", features = ["cookie"], optional = true }
 rustls = "0.23"
+cookie = "0.18.1"
 
 
 [dev-dependencies]

@@ -5,12 +5,14 @@ use axum::{
     response::{Html, Response},
 };
 use axum_extra::extract::CookieJar;
+use cookie::{Cookie, SameSite};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 // JWT过期时间（7天）
 const JWT_EXPIRATION_HOURS: i64 = 24 * 7;
+const AXUM_BOOTSTRAP_TOKEN: &str = "axum-boostrap-token";
 
 #[derive(Clone)]
 pub struct JwtConfig {
@@ -50,11 +52,27 @@ impl<T> Claims<T> {
     }
 
     /// 将Claims编码为JWT token
-    pub fn encode(&self, config: &JwtConfig) -> Result<String, jsonwebtoken::errors::Error>
+    pub(crate) fn encode(&self, config: &JwtConfig) -> Result<String, jsonwebtoken::errors::Error>
     where
         T: Serialize,
     {
         encode(&Header::default(), self, &config.encoding_key)
+    }
+
+    pub fn to_cookie<'a>(&self, jwt_config: &JwtConfig) -> Result<Cookie<'a>, jsonwebtoken::errors::Error>
+    where
+        T: Serialize,
+    {
+        // 生成JWT token
+        let token = self.encode(jwt_config)?;
+
+        // 创建cookie
+        Ok(Cookie::build((AXUM_BOOTSTRAP_TOKEN, token))
+            .path("/")
+            .max_age(time::Duration::days(7))
+            .same_site(SameSite::Lax)
+            .http_only(true)
+            .build())
     }
 
     /// 从JWT token解码为Claims
@@ -78,7 +96,7 @@ where
 {
     // 从cookie中获取JWT token
     let token = cookie_jar
-        .get("token")
+        .get(AXUM_BOOTSTRAP_TOKEN)
         .map(|cookie| cookie.value().to_string())
         .ok_or((StatusCode::UNAUTHORIZED, Html("Missing token".to_string())))?;
 

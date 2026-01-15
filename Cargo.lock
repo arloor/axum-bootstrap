@@ -203,6 +203,7 @@ dependencies = [
  "bcrypt",
  "chrono",
  "clap",
+ "cookie",
  "env_logger",
  "flexi_logger",
  "futures-util",

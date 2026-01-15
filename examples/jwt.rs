@@ -192,19 +192,12 @@ mod handler {
             ));
         }
 
-        // 生成JWT token
-        let token = Claims::new(ClaimsPayload { username: req.username })
-            .encode(&state.jwt_config)
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-        // 创建cookie
-        let cookie = Cookie::build(("token", token))
-            .path("/")
-            .max_age(time::Duration::days(7))
-            .same_site(SameSite::Lax)
-            .http_only(true)
-            .build();
-
+        let cookie = Claims::new(ClaimsPayload { username: req.username })
+            .to_cookie(&state.jwt_config)
+            .map_err(|e| {
+                error!("生成JWT token失败: {:?}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
         let jar = CookieJar::new().add(cookie);
 
         Ok((
