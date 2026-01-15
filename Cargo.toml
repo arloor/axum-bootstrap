@@ -1,6 +1,6 @@
 [package]
 name = "axum-bootstrap"
-version = "0.1.23"
+version = "0.1.24"
 edition = "2024"
 authors = ["arloor <admin@arloor.com>"]
 license = "MIT OR Apache-2.0"
@@ -11,7 +11,7 @@ keywords = ["axum", "http-server"]
 readme = "README.md"
 
 [features]
-default = ["use_tracing_subscriber"]
+default = ["use_tracing_subscriber", "jwt"]
 jwt = ["dep:jsonwebtoken", "dep:axum-extra", "tower-http/fs"]
 mysql = []
 use_tracing_subscriber = ["dep:tracing-subscriber", "dep:time"]

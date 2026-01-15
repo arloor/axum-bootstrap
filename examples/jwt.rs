@@ -8,7 +8,7 @@ use axum::{
 };
 use axum_bootstrap::{
     TlsParam,
-    jwt::{JwtConfig, jwt_auth_middleware},
+    jwt::{ClaimsPayload, JwtConfig, jwt_auth_middleware},
 };
 
 use clap::Parser;
@@ -77,7 +77,7 @@ pub async fn main() -> Result<(), DynError> {
     // 受保护的路由
     let protected_routes = Router::new()
         .route("/api/me", get(get_current_user))
-        .layer(middleware::from_fn_with_state(Arc::new(jwt_config.clone()), jwt_auth_middleware));
+        .layer(middleware::from_fn_with_state(Arc::new(jwt_config.clone()), jwt_auth_middleware::<ClaimsPayload>));
 
     // 构建应用
     let app = Router::new()
@@ -126,11 +126,12 @@ mod handler {
     use std::sync::Arc;
 
     use axum::{Json, extract::State};
-    use axum_bootstrap::jwt::AuthUser;
+    use axum_bootstrap::jwt::{Claims, ClaimsPayload};
     use axum_extra::extract::{
         CookieJar,
         cookie::{Cookie, SameSite},
     };
+    use axum_macros::debug_handler;
     use hyper::StatusCode;
     use log::error;
     use serde::{Deserialize, Serialize};
@@ -142,8 +143,9 @@ mod handler {
         username: String,
     }
 
-    pub async fn get_current_user(AuthUser { username }: AuthUser) -> Result<Json<UserInfo>, StatusCode> {
-        Ok(Json(UserInfo { username }))
+    #[debug_handler]
+    pub async fn get_current_user(Claims { payload, .. }: Claims) -> Result<Json<UserInfo>, StatusCode> {
+        Ok(Json(UserInfo { username: payload.username }))
     }
 
     #[derive(Deserialize, Debug)]
@@ -191,9 +193,8 @@ mod handler {
         }
 
         // 生成JWT token
-        let token = state
-            .jwt_config
-            .create_jwt(&req.username)
+        let token = Claims::new(ClaimsPayload { username: req.username })
+            .encode(&state.jwt_config)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         // 创建cookie

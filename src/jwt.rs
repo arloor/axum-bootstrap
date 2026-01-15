@@ -12,15 +12,6 @@ use std::sync::Arc;
 // JWT过期时间（7天）
 const JWT_EXPIRATION_HOURS: i64 = 24 * 7;
 
-// 可以扩展Claims结构体，添加更多自定义信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Claims {
-    pub sub: String,      // 用户名
-    pub username: String, // 用户名（显示字段）
-    pub exp: usize,       // 过期时间, 必须。用于验证是否过期
-    pub iat: usize,       // 签发时间
-}
-
 #[derive(Clone)]
 pub struct JwtConfig {
     pub encoding_key: EncodingKey,
@@ -34,35 +25,57 @@ impl JwtConfig {
             decoding_key: DecodingKey::from_secret(secret.as_bytes()),
         }
     }
+}
 
-    /// 生成JWT token
-    pub fn create_jwt(&self, username: &str) -> Result<String, jsonwebtoken::errors::Error> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Claims<T = ClaimsPayload> {
+    pub payload: T, // 自定义负载
+    pub exp: usize, // 过期时间, 必须。用于验证是否过期
+    pub iat: usize, // 签发时间
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaimsPayload {
+    pub username: String,
+}
+
+impl<T> Claims<T> {
+    /// 从payload创建Claims
+    pub fn new(payload: T) -> Self {
         let now = chrono::Utc::now();
         let exp = (now + chrono::Duration::hours(JWT_EXPIRATION_HOURS)).timestamp() as usize;
         let iat = now.timestamp() as usize;
 
-        let claims = Claims {
-            sub: username.to_string(),
-            username: username.to_string(),
-            exp,
-            iat,
-        };
-
-        encode(&Header::default(), &claims, &self.encoding_key)
+        Claims { payload, exp, iat }
     }
 
-    /// 验证JWT token
-    pub fn verify_jwt(&self, token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+    /// 将Claims编码为JWT token
+    pub fn encode(&self, config: &JwtConfig) -> Result<String, jsonwebtoken::errors::Error>
+    where
+        T: Serialize,
+    {
+        encode(&Header::default(), self, &config.encoding_key)
+    }
+
+    /// 从JWT token解码为Claims
+    pub fn decode(token: &str, config: &JwtConfig) -> Result<Self, jsonwebtoken::errors::Error>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
         let validation = Validation::default();
-        let token_data = decode::<Claims>(token, &self.decoding_key, &validation)?;
+        let token_data = decode::<Claims<T>>(token, &config.decoding_key, &validation)?;
         Ok(token_data.claims)
     }
 }
 
 /// JWT认证中间件
-pub async fn jwt_auth_middleware(
+pub async fn jwt_auth_middleware<T>(
     State(config): State<Arc<JwtConfig>>, cookie_jar: CookieJar, mut request: Request, next: Next,
-) -> Result<Response, (StatusCode, Html<String>)> {
+) -> Result<Response, (StatusCode, Html<String>)>
+where
+    T: for<'de> Deserialize<'de> + Send + Sync + 'static,
+    T: Clone,
+{
     // 从cookie中获取JWT token
     let token = cookie_jar
         .get("token")
@@ -70,9 +83,10 @@ pub async fn jwt_auth_middleware(
         .ok_or((StatusCode::UNAUTHORIZED, Html("Missing token".to_string())))?;
 
     // 验证JWT token
-    let claims = config
-        .verify_jwt(&token)
-        .map_err(|_| (StatusCode::UNAUTHORIZED, Html("Invalid token".to_string())))?;
+    let claims = Claims::<T>::decode(&token, &config).map_err(|e| {
+        log::error!("JWT验证失败: {:?}", e);
+        (StatusCode::UNAUTHORIZED, Html("Invalid token".to_string()))
+    })?;
 
     // 将claims存入request extensions，后续handler可以使用
     request.extensions_mut().insert(claims);
@@ -80,26 +94,20 @@ pub async fn jwt_auth_middleware(
     Ok(next.run(request).await)
 }
 
-/// 认证用户信息提取器
-#[derive(Debug, Clone)]
-pub struct AuthUser {
-    pub username: String,
-}
-
-impl<S> FromRequestParts<S> for AuthUser
+impl<S, T> FromRequestParts<S> for Claims<T>
 where
     S: Send + Sync,
+    T: Send + Sync + 'static,
+    T: Clone,
 {
     type Rejection = (StatusCode, Html<String>);
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let claims = parts
             .extensions
-            .get::<Claims>()
+            .get::<Claims<T>>()
             .ok_or((StatusCode::UNAUTHORIZED, Html("Missing or invalid token".to_string())))?;
 
-        Ok(AuthUser {
-            username: claims.username.clone(),
-        })
+        Ok(claims.clone())
     }
 }
