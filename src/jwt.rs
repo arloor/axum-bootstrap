@@ -68,7 +68,7 @@ impl<T> Claims<T> {
         encode(&Header::default(), self, &config.encoding_key)
     }
 
-    pub fn to_cookie<'a>(&self, jwt_config: &JwtConfig) -> Result<Cookie<'a>, jsonwebtoken::errors::Error>
+    pub fn to_cookie<'a>(&'_ self, jwt_config: &JwtConfig) -> Result<Cookie<'a>, jsonwebtoken::errors::Error>
     where
         T: Serialize,
     {
