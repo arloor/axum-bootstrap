@@ -8,11 +8,20 @@ use axum_extra::extract::CookieJar;
 use cookie::{Cookie, SameSite};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 // JWT过期时间（7天）
 const JWT_EXPIRATION_HOURS: i64 = 24 * 7;
 const AXUM_BOOTSTRAP_TOKEN: &str = "axum-boostrap-token";
+
+pub const LOGOUT_COOKIE: LazyLock<Cookie<'_>> = LazyLock::new(|| {
+    Cookie::build((AXUM_BOOTSTRAP_TOKEN, ""))
+        .path("/")
+        .max_age(time::Duration::seconds(-1))
+        .same_site(SameSite::Lax)
+        .http_only(true)
+        .build()
+});
 
 #[derive(Clone)]
 pub struct JwtConfig {

@@ -126,11 +126,8 @@ mod handler {
     use std::sync::Arc;
 
     use axum::{Json, extract::State};
-    use axum_bootstrap::jwt::{Claims, ClaimsPayload};
-    use axum_extra::extract::{
-        CookieJar,
-        cookie::{Cookie, SameSite},
-    };
+    use axum_bootstrap::jwt::{Claims, ClaimsPayload, LOGOUT_COOKIE};
+    use axum_extra::extract::CookieJar;
     use axum_macros::debug_handler;
     use hyper::StatusCode;
     use log::error;
@@ -211,14 +208,8 @@ mod handler {
     }
 
     pub async fn logout_handler() -> Result<(StatusCode, CookieJar, Json<LoginResponse>), StatusCode> {
-        let cookie = Cookie::build(("token", ""))
-            .path("/")
-            .max_age(time::Duration::seconds(-1))
-            .same_site(SameSite::Lax)
-            .http_only(true)
-            .build();
-
-        let jar = CookieJar::new().add(cookie);
+        let logout_cookie = LOGOUT_COOKIE;
+        let jar = CookieJar::new().add(logout_cookie.clone());
 
         Ok((
             StatusCode::OK,
