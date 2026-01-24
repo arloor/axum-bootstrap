@@ -193,7 +193,7 @@ async fn handle_connection<C, I>(
         if let Err(err) = conn.await {
             handle_hyper_error(client_socket_addr, err);
         }
-        log::debug!("connection dropped: {client_socket_addr}");
+        log::debug!("dropped: {client_socket_addr}");
     });
 }
 
