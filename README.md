@@ -14,7 +14,6 @@
 - 🎯 **优雅关闭**：支持 graceful shutdown，确保请求正常处理
 - 🔑 **JWT 认证**：可选的 JWT 认证中间件
 - 🌐 **双栈监听**：同时支持 IPv4 和 IPv6
-- ⚡ **高性能**：基于 Tokio 异步运行时
 - 🛡️ **错误处理**：统一的错误处理机制
 - 🔧 **请求拦截器**：可自定义请求拦截逻辑
 - ⏱️ **超时控制**：可配置的连接空闲超时
@@ -27,6 +26,68 @@
 [dependencies]
 axum-bootstrap = "0.1"
 ```
+
+## 📚 示例程序
+
+项目提供了两个完整的示例程序，展示了不同的使用场景：
+
+### 1. 基础示例 ([basic.rs](examples/basic.rs))
+
+基础的 HTTP/HTTPS 服务器示例，包含完整的中间件栈和常用功能：
+
+**主要功能：**
+- ✅ HTTP/HTTPS 支持
+- ✅ MySQL 数据库集成（可选）
+- ✅ Prometheus 指标收集
+- ✅ CORS、压缩、超时控制
+- ✅ 请求追踪和日志
+- ✅ JSON 数据处理
+
+**运行方式：**
+```bash
+# HTTP 模式
+cargo run --example basic
+
+# HTTPS 模式
+cargo run --example basic -- --tls --cert cert.pem --key privkey.pem
+
+# 启用 MySQL 支持
+cargo run --example basic --features mysql
+```
+
+### 2. JWT 认证示例 ([jwt.rs](examples/jwt.rs))
+
+完整的 JWT 用户认证实现，包含登录、登出和受保护的 API：
+
+**主要功能：**
+- 🔐 JWT token 生成和验证
+- 🍪 Cookie-based 会话管理
+- 🔒 密码 bcrypt 哈希
+- 🛡️ 受保护的 API 端点
+- 📁 静态文件服务
+
+**API 端点：**
+- `POST /api/login` - 用户登录
+- `POST /api/logout` - 用户登出
+- `GET /api/me` - 获取当前用户信息（需认证）
+- `GET /health` - 健康检查
+
+**运行方式：**
+```bash
+# HTTP 模式
+cargo run --example jwt --features jwt -- \
+  --username admin \
+  --password secret123
+
+# HTTPS 模式
+cargo run --example jwt --features jwt -- \
+  --username admin \
+  --password secret123 \
+  --cert cert.pem \
+  --key privkey.pem
+```
+
+> 💡 **提示：** 所有示例程序都包含详细的代码注释，可以直接查看源码了解实现细节。
 
 ### 功能特性（Features）
 
