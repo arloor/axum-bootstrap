@@ -15,23 +15,10 @@
 //! let app = Router::new().route("/", get(handler));
 //! ```
 
-use axum::{
-    extract::FromRequestParts,
-    http::{request::Parts, StatusCode},
-    response::{IntoResponse, Response},
-};
+use axum::{extract::FromRequestParts, http::request::Parts};
+use futures_util::io;
 
-/// Host extractor 错误类型
-///
-/// 当无法从请求中提取 Host 信息时返回此错误
-#[derive(Debug)]
-pub struct MissingHost;
-
-impl IntoResponse for MissingHost {
-    fn into_response(self) -> Response {
-        (StatusCode::BAD_REQUEST, "Missing Host header").into_response()
-    }
-}
+use crate::error::AppError;
 
 /// Host extractor
 ///
@@ -57,7 +44,25 @@ impl IntoResponse for MissingHost {
 ///
 /// # 错误处理
 ///
-/// 如果请求中没有 Host 信息，将返回 400 Bad Request 错误
+/// 如果请求中没有 Host 信息，将返回 500 错误
+///
+/// # 可选 Host 提取
+///
+/// 如果你希望 Host 是可选的（不存在时不报错），可以使用 `Option<Host>`：
+///
+/// ```no_run
+/// use axum::{Router, routing::get};
+/// use axum_bootstrap::util::extractor::Host;
+///
+/// async fn show_host(host: Option<Host>) -> String {
+///     match host {
+///         Some(Host(h)) => format!("Your host is: {}", h),
+///         None => "No host provided".to_string(),
+///     }
+/// }
+///
+/// let app = Router::new().route("/", get(show_host));
+/// ```
 #[derive(Debug, Clone)]
 pub struct Host(pub String);
 
@@ -65,25 +70,26 @@ impl<S> FromRequestParts<S> for Host
 where
     S: Send + Sync,
 {
-    type Rejection = MissingHost;
+    type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        // HTTP/2 使用 :authority pseudo-header
-        // 在 Axum/Hyper 中，:authority 会被转换为 URI 的 authority 部分
-        if let Some(authority) = parts.uri.authority() {
-            return Ok(Host(authority.to_string()));
-        }
-
-        // HTTP/1.x 使用 Host header
-        // 或者作为 HTTP/2 的回退方案
+        // 以Host header为优先
+        // HTTP1 要求必须传递 Host header
+        // HTTP2 中用于特殊情况的需求，例如反向代理指定 Host
         if let Some(host) = parts.headers.get("host") {
             if let Ok(host_str) = host.to_str() {
                 return Ok(Host(host_str.to_string()));
             }
         }
 
+        // HTTP/2 使用 :authority pseudo-header
+        // 在 Axum/Hyper 中，:authority 会被转换为 URI 的 authority 部分
+        if let Some(authority) = parts.uri.authority() {
+            return Ok(Host(authority.to_string()));
+        }
+
         // 无法获取 Host 信息
-        Err(MissingHost)
+        Err(AppError::new(io::Error::new(io::ErrorKind::InvalidInput, "Missing Host information in request")))
     }
 }
 
@@ -94,11 +100,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_host_from_header() {
-        let req = Request::builder()
-            .uri("/test")
-            .header("host", "example.com:8080")
-            .body(())
-            .unwrap();
+        let req = Request::builder().uri("/test").header("host", "example.com:8080").body(()).unwrap();
 
         let (mut parts, _) = req.into_parts();
         let host = Host::from_request_parts(&mut parts, &()).await.unwrap();
@@ -108,10 +110,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_host_from_authority() {
-        let req = Request::builder()
-            .uri("http://example.com:8080/test")
-            .body(())
-            .unwrap();
+        let req = Request::builder().uri("http://example.com:8080/test").body(()).unwrap();
 
         let (mut parts, _) = req.into_parts();
         let host = Host::from_request_parts(&mut parts, &()).await.unwrap();
