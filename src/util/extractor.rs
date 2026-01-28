@@ -15,8 +15,9 @@
 //! let app = Router::new().route("/", get(handler));
 //! ```
 
+use std::io;
+
 use axum::{extract::FromRequestParts, http::request::Parts};
-use futures_util::io;
 
 use crate::error::AppError;
 
