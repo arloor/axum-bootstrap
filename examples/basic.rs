@@ -144,6 +144,7 @@ mod handler {
         http::{self, HeaderValue},
         routing::get,
     };
+    use axum_bootstrap::util::extractor::Host;
     use axum_macros::debug_handler;
     use chrono::NaiveDateTime;
     use hyper::{HeaderMap, StatusCode};
@@ -173,6 +174,7 @@ mod handler {
     ///
     /// # 路由列表
     /// - `GET /`: 返回客户端地址
+    /// - `GET /host`: 返回请求的 Host 信息 (兼容 HTTP/1 和 HTTP/2)
     /// - `GET /time`: 延迟 20 秒后返回 (用于测试超时)
     /// - `GET /metrics`: Prometheus 指标
     /// - `GET /error`: 错误处理示例
@@ -187,6 +189,7 @@ mod handler {
         // build our application with a route
         Router::new()
             .route("/", get(|ConnectInfo(addr): ConnectInfo<SocketAddr>| async move { (StatusCode::OK, format!("{addr}")) }))
+            .route("/host", get(host_handler))
             .route(
                 "/time",
                 get(|| async {
@@ -225,6 +228,28 @@ mod handler {
         let matched_path = req.extensions().get::<MatchedPath>().map(|matched_path| matched_path.as_str());
 
         tracing::debug_span!("recv request", %method, %path, matched_path)
+    }
+
+    /// Host 信息处理器
+    ///
+    /// 展示如何使用 Host extractor 获取请求的 Host 信息
+    /// 兼容 HTTP/1.x 和 HTTP/2 协议
+    ///
+    /// # 返回
+    /// - 包含 Host 信息的响应
+    ///
+    /// # 示例
+    ///
+    /// ```bash
+    /// # HTTP/1.1 请求
+    /// curl -H "Host: example.com" http://localhost:4000/host
+    ///
+    /// # 带端口号的请求
+    /// curl http://localhost:4000/host
+    /// ```
+    pub(crate) async fn host_handler(Host(host): Host) -> (StatusCode, String) {
+        info!("Received request from host: {}", host);
+        (StatusCode::OK, format!("Host: {}", host))
     }
 
     /// Prometheus 指标处理器
