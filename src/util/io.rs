@@ -3,26 +3,27 @@
 //! 提供网络 IO 相关的工具函数和类型
 //!
 //! # 主要组件
-//! - `create_dual_stack_listener`: 创建支持 IPv4/IPv6 双栈的监听器
+//! - `create_tcp_listener`: 创建 TCP 监听器，支持指定监听地址
 //! - `TimeoutIO`: 为 IO 流添加空闲超时检测
 
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::TcpListener;
 
-/// 创建 IPv4/IPv6 双栈监听器
+/// 创建 TCP 监听器
 ///
-/// 创建一个同时支持 IPv4 和 IPv6 连接的 TCP 监听器
+/// 根据传入地址创建 TCP 监听器。当地址是 `[::]:port` 时，会创建 IPv4/IPv6 双栈监听器。
 ///
 /// # 参数
-/// - `port`: 监听端口
+/// - `addr`: 监听地址
 ///
 /// # 返回
 /// - `Ok(TcpListener)`: 配置好的 TCP 监听器
 /// - `Err(io::Error)`: 创建或配置失败
 ///
 /// # 配置说明
-/// - 绑定到 `[::]` (所有 IPv6 地址)
-/// - 设置 `IPV6_V6ONLY=false`，支持 IPv4 映射
+/// - IPv4 地址使用 IPv4 socket
+/// - IPv6 地址使用 IPv6 socket
+/// - 绑定到 `[::]` 时设置 `IPV6_V6ONLY=false`，支持 IPv4 映射
 /// - 监听队列大小 (backlog): 1024
 /// - 非阻塞模式
 /// - 非 Windows 平台启用 `SO_REUSEADDR`
@@ -30,26 +31,28 @@ use tokio::net::TcpListener;
 /// # 示例
 ///
 /// ```no_run
-/// use axum_bootstrap::util::io::create_dual_stack_listener;
+/// use axum_bootstrap::util::io::create_tcp_listener;
+/// use std::net::SocketAddr;
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let listener = create_dual_stack_listener(8080).await.unwrap();
+///     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+///     let listener = create_tcp_listener(addr).await.unwrap();
 /// }
 /// ```
-pub(crate) async fn create_dual_stack_listener(port: u16) -> io::Result<TcpListener> {
-    // 创建一个 IPv6 的 socket
-    let domain = Domain::IPV6;
+pub(crate) async fn create_tcp_listener(addr: SocketAddr) -> io::Result<TcpListener> {
+    let domain = match addr {
+        SocketAddr::V4(_) => Domain::IPV4,
+        SocketAddr::V6(_) => Domain::IPV6,
+    };
     let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
 
     #[cfg(not(windows))]
     socket.set_reuse_address(true)?; // 设置 reuse_address 以支持快速重启
 
-    // 支持 IPv4 + IPv6 双栈
-    socket.set_only_v6(false)?;
-
-    // 绑定 socket 到地址和端口
-    let addr = SocketAddr::from(([0, 0, 0, 0, 0, 0, 0, 0], port));
+    if let SocketAddr::V6(addr) = addr {
+        socket.set_only_v6(!addr.ip().is_unspecified())?;
+    }
     socket.bind(&addr.into())?;
     socket.listen(1024)?; // 监听，1024 为 backlog 的大小
 
@@ -72,7 +75,7 @@ use std::{
 use pin_project_lite::pin_project;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    time::{sleep, Instant, Sleep},
+    time::{Instant, Sleep, sleep},
 };
 
 pin_project! {

@@ -17,6 +17,9 @@
 //! # HTTP 模式
 //! cargo run --example basic
 //!
+//! # 只监听本机 IPv4
+//! cargo run --example basic -- --host 127.0.0.1 --port 4000
+//!
 //! # HTTPS 模式
 //! cargo run --example basic -- --tls --cert cert.pem --key privkey.pem
 //!
@@ -26,7 +29,7 @@
 
 #![deny(warnings)]
 
-use std::time::Duration;
+use std::{net::IpAddr, time::Duration};
 
 use axum_bootstrap::TlsParam;
 
@@ -41,6 +44,10 @@ type DynError = Box<dyn std::error::Error + Send + Sync>;
 #[derive(Parser)]
 #[command(author, version=None, about, long_about = None)]
 pub struct Param {
+    /// 监听 IP
+    #[arg(long, value_name = "host", default_value = "::")]
+    host: IpAddr,
+
     /// 监听端口
     #[arg(long, short, value_name = "port", default_value = "4000")]
     port: u16,
@@ -101,15 +108,18 @@ pub async fn main() -> Result<(), DynError> {
             )
             .await?;
         use axum_bootstrap::generate_shutdown_receiver;
-        let server = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client, pool }), register_shutdown_receiver());
-        let server = server.with_timeout(Duration::from_secs(120)).with_tls_param(match PARAM.tls {
-            true => Some(TlsParam {
-                tls: true,
-                cert: PARAM.cert.to_string(),
-                key: PARAM.key.to_string(),
-            }),
-            false => None,
-        });
+        let server = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client, pool }), generate_shutdown_receiver());
+        let server = server
+            .with_listen_ip(PARAM.host)
+            .with_timeout(Duration::from_secs(120))
+            .with_tls_param(match PARAM.tls {
+                true => Some(TlsParam {
+                    tls: true,
+                    cert: PARAM.cert.to_string(),
+                    key: PARAM.key.to_string(),
+                }),
+                false => None,
+            });
 
         server.run().await?;
     }
@@ -118,14 +128,17 @@ pub async fn main() -> Result<(), DynError> {
     {
         use axum_bootstrap::generate_shutdown_receiver;
         let server = axum_bootstrap::new_server(PARAM.port, handler::build_router(handler::AppState { client }), generate_shutdown_receiver());
-        let server = server.with_timeout(Duration::from_secs(120)).with_tls_param(match PARAM.tls {
-            true => Some(TlsParam {
-                tls: true,
-                cert: PARAM.cert.to_string(),
-                key: PARAM.key.to_string(),
-            }),
-            false => None,
-        });
+        let server = server
+            .with_listen_ip(PARAM.host)
+            .with_timeout(Duration::from_secs(120))
+            .with_tls_param(match PARAM.tls {
+                true => Some(TlsParam {
+                    tls: true,
+                    cert: PARAM.cert.to_string(),
+                    key: PARAM.key.to_string(),
+                }),
+                false => None,
+            });
 
         server.run().await?;
     }

@@ -14,17 +14,24 @@
 //! ```no_run
 //! use axum::Router;
 //! use axum_bootstrap::{new_server, generate_shutdown_receiver};
+//! use std::net::IpAddr;
 //!
 //! #[tokio::main]
 //! async fn main() {
 //!     let router = Router::new();
 //!     let shutdown_rx = generate_shutdown_receiver();
-//!     let server = new_server(8080, router, shutdown_rx);
+//!     let server = new_server(8080, router, shutdown_rx)
+//!         .with_listen_ip(IpAddr::from([127, 0, 0, 1]));
 //!     server.run().await.unwrap();
 //! }
 //! ```
 
-use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    convert::Infallible,
+    net::{IpAddr, Ipv6Addr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 
 /// 错误处理模块
 pub mod error;
@@ -40,7 +47,7 @@ pub mod util;
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 
 use crate::util::{
-    io::{self, create_dual_stack_listener},
+    io::{self, create_tcp_listener},
     tls::{TlsAcceptor, tls_config},
 };
 
@@ -73,6 +80,7 @@ const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 /// - `I`: 请求拦截器类型，必须实现 `ReqInterceptor` trait
 ///
 /// # 字段
+/// - `listen_ip`: 监听 IP
 /// - `port`: 监听端口
 /// - `tls_param`: TLS 配置参数 (可选)
 /// - `router`: Axum 路由
@@ -80,6 +88,7 @@ const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 /// - `idle_timeout`: 连接空闲超时时间
 /// - `shutdown_rx`: 关闭信号接收器
 pub struct Server<I: ReqInterceptor = DummyInterceptor> {
+    pub listen_ip: IpAddr,
     pub port: u16,
     pub tls_param: Option<TlsParam>,
     router: Router,
@@ -184,17 +193,20 @@ pub type DefaultServer = Server<DummyInterceptor>;
 /// ```no_run
 /// use axum::Router;
 /// use axum_bootstrap::{new_server, generate_shutdown_receiver};
+/// use std::net::IpAddr;
 ///
 /// #[tokio::main]
 /// async fn main() {
 ///     let router = Router::new();
 ///     let shutdown_rx = generate_shutdown_receiver();
-///     let server = new_server(8080, router, shutdown_rx);
+///     let server = new_server(8080, router, shutdown_rx)
+///         .with_listen_ip(IpAddr::from([127, 0, 0, 1]));
 ///     server.run().await.unwrap();
 /// }
 /// ```
 pub fn new_server(port: u16, router: Router, shutdown_rx: broadcast::Receiver<()>) -> Server {
     Server {
+        listen_ip: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
         port,
         tls_param: None, // 默认不启用 TLS
         router,
@@ -225,6 +237,7 @@ where
         R: ReqInterceptor + Clone + Send + Sync + 'static,
     {
         Server::<R> {
+            listen_ip: self.listen_ip,
             port: self.port,
             tls_param: self.tls_param,
             router: self.router,
@@ -232,6 +245,21 @@ where
             idle_timeout: self.idle_timeout, // 保持相同的空闲超时
             shutdown_rx: self.shutdown_rx,
         }
+    }
+
+    /// 设置监听 IP
+    ///
+    /// 默认监听 `[::]`，在支持双栈的系统上同时接受 IPv4 和 IPv6 连接。
+    /// 可以传入 `127.0.0.1`、`0.0.0.0`、`::1` 等地址限制监听范围。
+    ///
+    /// # 参数
+    /// - `listen_ip`: 监听 IP
+    ///
+    /// # 返回
+    /// 返回配置了监听 IP 的服务器实例
+    pub fn with_listen_ip(mut self, listen_ip: impl Into<IpAddr>) -> Self {
+        self.listen_ip = listen_ip.into();
+        self
     }
 
     /// 设置 TLS 参数
@@ -275,7 +303,8 @@ where
             Some(config) => config.tls,
             None => false,
         };
-        log::info!("listening on port {}, use_tls: {}", self.port, use_tls);
+        let listen_addr = SocketAddr::new(self.listen_ip, self.port);
+        log::info!("listening on {}, use_tls: {}", listen_addr, use_tls);
         let server: hyper_util::server::conn::auto::Builder<TokioExecutor> = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new());
         let graceful: hyper_util::server::graceful::GracefulShutdown = hyper_util::server::graceful::GracefulShutdown::new();
         match use_tls {
@@ -285,7 +314,7 @@ where
                     &self.router,
                     server,
                     graceful,
-                    self.port,
+                    listen_addr,
                     self.tls_param.as_ref().expect("should be some"),
                     self.interceptor.clone(),
                     self.idle_timeout,
@@ -294,7 +323,8 @@ where
                 .await?
             }
             false => {
-                serve_plantext(&self.router, server, graceful, self.port, self.interceptor.clone(), self.idle_timeout, &mut self.shutdown_rx).await?
+                serve_plantext(&self.router, server, graceful, listen_addr, self.interceptor.clone(), self.idle_timeout, &mut self.shutdown_rx)
+                    .await?
             }
         }
         Ok(())
@@ -436,12 +466,12 @@ fn handle_hyper_error(client_socket_addr: SocketAddr, http_err: DynError) {
 /// - `Err(std::io::Error)`: 启动或运行过程中出现错误
 async fn serve_plantext<I>(
     app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown,
-    port: u16, interceptor: Option<I>, timeout: Duration, shutdown_rx: &mut broadcast::Receiver<()>,
+    listen_addr: SocketAddr, interceptor: Option<I>, timeout: Duration, shutdown_rx: &mut broadcast::Receiver<()>,
 ) -> Result<(), std::io::Error>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
 {
-    let listener = create_dual_stack_listener(port).await?;
+    let listener = create_tcp_listener(listen_addr).await?;
     loop {
         tokio::select! {
             _ = shutdown_rx.recv() => {
@@ -490,7 +520,7 @@ where
 #[allow(clippy::too_many_arguments)]
 async fn serve_tls<I>(
     app: &Router, server: hyper_util::server::conn::auto::Builder<TokioExecutor>, graceful: hyper_util::server::graceful::GracefulShutdown,
-    port: u16, tls_param: &TlsParam, interceptor: Option<I>, timeout: Duration, shutdown_rx: &mut broadcast::Receiver<()>,
+    listen_addr: SocketAddr, tls_param: &TlsParam, interceptor: Option<I>, timeout: Duration, shutdown_rx: &mut broadcast::Receiver<()>,
 ) -> Result<(), std::io::Error>
 where
     I: ReqInterceptor + Clone + Send + Sync + 'static,
@@ -509,7 +539,7 @@ where
             }
         }
     });
-    let mut acceptor: TlsAcceptor = TlsAcceptor::new(tls_config(&tls_param.key, &tls_param.cert)?, create_dual_stack_listener(port).await?);
+    let mut acceptor: TlsAcceptor = TlsAcceptor::new(tls_config(&tls_param.key, &tls_param.cert)?, create_tcp_listener(listen_addr).await?);
     loop {
         tokio::select! {
             _ = shutdown_rx.recv() => {

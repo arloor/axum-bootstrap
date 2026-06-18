@@ -13,7 +13,7 @@
 - 📝 **多种日志方案**：支持 tracing-subscriber、env_logger、flexi_logger
 - 🎯 **优雅关闭**：支持 graceful shutdown，确保请求正常处理
 - 🔑 **JWT 认证**：可选的 JWT 认证中间件
-- 🌐 **双栈监听**：同时支持 IPv4 和 IPv6
+- 🌐 **监听地址配置**：默认 IPv4/IPv6 双栈监听，也可指定监听 IP
 - 🛡️ **错误处理**：统一的错误处理机制
 - 🔧 **请求拦截器**：可自定义请求拦截逻辑
 - ⏱️ **超时控制**：可配置的连接空闲超时
@@ -48,6 +48,9 @@ axum-bootstrap = "0.1"
 # HTTP 模式
 cargo run --example basic
 
+# 只监听本机 IPv4
+cargo run --example basic -- --host 127.0.0.1 --port 4000
+
 # HTTPS 模式
 cargo run --example basic -- --tls --cert cert.pem --key privkey.pem
 
@@ -76,11 +79,13 @@ cargo run --example basic --features mysql
 ```bash
 # HTTP 模式
 cargo run --example jwt --features jwt -- \
+  --host 127.0.0.1 \
   --username admin \
   --password secret123
 
 # HTTPS 模式
 cargo run --example jwt --features jwt -- \
+  --host 0.0.0.0 \
   --username admin \
   --password secret123 \
   --cert cert.pem \
@@ -115,9 +120,27 @@ axum-bootstrap = { version = "0.1", features = ["use_flexi_logger"] }
 ### 工具函数
 
 - `util::format`：地址格式化工具
-- `util::io`：IO 相关工具，包括双栈监听器创建
 - `util::json`：JSON 处理工具
 - `util::tls`：TLS 配置工具
+
+### 指定监听 IP
+
+`new_server(port, ...)` 默认监听 `[::]:port`，在支持双栈的系统上同时接受 IPv4 和 IPv6 连接。需要限制监听范围时，可以使用 `with_listen_ip`：
+
+```rust
+use axum::Router;
+use axum_bootstrap::{generate_shutdown_receiver, new_server};
+use std::net::IpAddr;
+
+#[tokio::main]
+async fn main() {
+    let router = Router::new();
+    let server = new_server(8080, router, generate_shutdown_receiver())
+        .with_listen_ip(IpAddr::from([127, 0, 0, 1]));
+
+    server.run().await.unwrap();
+}
+```
 
 ## 📖 API 文档
 

@@ -21,12 +21,14 @@
 //! ```bash
 //! # HTTP 模式
 //! cargo run --example jwt --features jwt -- \
+//!   --host 127.0.0.1 \
 //!   --username admin \
 //!   --password secret123 \
 //!   --port 8080
 //!
 //! # HTTPS 模式
 //! cargo run --example jwt --features jwt -- \
+//!   --host 0.0.0.0 \
 //!   --username admin \
 //!   --password secret123 \
 //!   --port 8443 \
@@ -36,7 +38,7 @@
 
 #![deny(warnings)]
 
-use std::{sync::Arc, time::Duration};
+use std::{net::IpAddr, sync::Arc, time::Duration};
 
 use axum::{
     Router, middleware,
@@ -60,6 +62,10 @@ type DynError = Box<dyn std::error::Error + Send + Sync>;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    /// 监听 IP
+    #[arg(long, default_value = "::")]
+    host: IpAddr,
+
     /// 监听端口
     #[arg(short, long, default_value = "8080")]
     port: u16,
@@ -161,16 +167,18 @@ pub async fn main() -> Result<(), DynError> {
 
     use axum_bootstrap::generate_shutdown_receiver;
     let server = axum_bootstrap::new_server(PARAM.port, app, generate_shutdown_receiver());
-    let server = server
-        .with_timeout(Duration::from_secs(120))
-        .with_tls_param(match (PARAM.cert.as_ref(), PARAM.key.as_ref()) {
-            (Some(cert), Some(key)) => Some(TlsParam {
-                tls: true,
-                cert: cert.to_string(),
-                key: key.to_string(),
-            }),
-            _ => None,
-        });
+    let server =
+        server
+            .with_listen_ip(PARAM.host)
+            .with_timeout(Duration::from_secs(120))
+            .with_tls_param(match (PARAM.cert.as_ref(), PARAM.key.as_ref()) {
+                (Some(cert), Some(key)) => Some(TlsParam {
+                    tls: true,
+                    cert: cert.to_string(),
+                    key: key.to_string(),
+                }),
+                _ => None,
+            });
 
     server.run().await?;
 
